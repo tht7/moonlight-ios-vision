@@ -82,7 +82,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>AVGameBypassSystemSpatialAudio</key>
+	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>GCSupportsGameMode</key>
+	<true/>
 </dict>
 </plist>
