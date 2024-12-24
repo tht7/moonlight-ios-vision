@@ -136,15 +136,6 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
 
     m_isSpatial = false;
     if (m_channelCount > 2) {
-        if (physicalOutputChannels >= m_channelCount) {
-            NSError *error = nil;
-            Log(LOG_I, @"Multichannel output is available, will use passthrough mode");
-            [session setPreferredOutputNumberOfChannels:m_channelCount error:&error];
-            if (error != nil) {
-                Log(LOG_W, @"Warning: failed to set preferred output number of channels to %d: %@", m_channelCount, error.localizedDescription);
-                // probably ok to continue
-            }
-        }
         if (outputType != kSpatialMixerOutputType_ExternalSpeakers) {
             m_isSpatial = true;
         }
@@ -175,19 +166,68 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
 
         setCallback(this, renderCallbackSpatial);
 
+        status = AudioUnitSetProperty(m_OutputAU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &streamDesc, sizeof(streamDesc));
+        if (status != noErr) {
+            CA_LogError(status, "Failed to set output stream format");
+            return false;
+        }
+
         Log(LOG_I, @"OutputAU is using spatial audio output");
     }
     else {
         // direct CoreAudio, for stereo or when enough real channels are available (HDMI)
         setCallback(this, renderCallbackDirect);
 
-        Log(LOG_I, @"OutputAU is using passthrough audio output");
-    }
+        status = AudioUnitSetProperty(m_OutputAU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &streamDesc, sizeof(streamDesc));
+        if (status != noErr) {
+            CA_LogError(status, "Failed to set output stream format");
+            return false;
+        }
 
-    status = AudioUnitSetProperty(m_OutputAU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &streamDesc, sizeof(streamDesc));
-    if (status != noErr) {
-        CA_LogError(status, "Failed to set output stream format");
-        return false;
+        // Allow multichannel to any device with >2 channels
+        if (m_channelCount > 2 && physicalOutputChannels > 2) {
+            NSError *error = nil;
+            Log(LOG_I, @"Multichannel output is available, will use passthrough mode");
+            [session setPreferredOutputNumberOfChannels:m_channelCount error:&error];
+            if (error != nil) {
+                Log(LOG_W, @"Warning: failed to set preferred output number of channels to %d: %@", m_channelCount, error.localizedDescription);
+                // probably ok to continue
+            }
+        }
+
+        // Define the direct output stream format to ensure correct multichannel mapping
+        AudioChannelLayoutTag layout;
+        switch (m_channelCount) {
+            case 2:
+                layout = kAudioChannelLayoutTag_Stereo;
+                break;
+            case 6:
+                layout = kAudioChannelLayoutTag_WAVE_5_1_B; // L R C LFE Rls Rrs
+                break;
+            case 8:
+                layout = kAudioChannelLayoutTag_WAVE_7_1; // L R C LFE Rls Rrs Ls Rs
+                break;
+            default:
+                CA_LogError(-1, "Unsupported number of channels for direct audio mode: %d", m_channelCount);
+                return false;
+        }
+
+        AVAudioChannelLayout* outLayout = [AVAudioChannelLayout layoutWithLayoutTag:layout];
+        AVAudioFormat *format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
+                                                                 sampleRate:m_sampleRate
+                                                                interleaved:YES
+                                                              channelLayout:outLayout];
+
+        const AudioStreamBasicDescription* asbd = [format streamDescription];
+        CA_PrintASBD("OutputAU AudioStreamBasicDescription:", asbd);
+
+        const AudioChannelLayout* outLayout2 = [outLayout layout];
+        OSStatus status = AudioUnitSetProperty(m_OutputAU, kAudioUnitProperty_AudioChannelLayout, kAudioUnitScope_Input, 0, outLayout2, sizeof(AudioChannelLayout));
+        if (status != noErr) {
+            CA_LogError(status, "Failed to set OutputAU AudioChannelLayout scope=%d, layout=%d", kAudioUnitScope_Input, outLayout2);
+            return status;
+        }
+        Log(LOG_I, @"OutputAU passthrough channel layout set for %d channels", m_channelCount);
     }
 
     return true;
