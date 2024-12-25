@@ -11,6 +11,8 @@
 - (void *)getAudioBuffer:(int *)size;
 - (BOOL)submitAudio:(int)bytesWritten;
 - (void)handleRouteChange:(NSNotification *)notification;
+- (void)handleRenderingCapabilitiesChange:(NSNotification *)notification;
+- (void)handleRenderingModeChange:(NSNotification *)notification;
 
 @end
 

@@ -8,6 +8,7 @@
 
 #import "Connection.h"
 #import "Utils.h"
+#import "CoreAudioHelpers.h"
 
 #import <VideoToolbox/VideoToolbox.h>
 
@@ -230,14 +231,6 @@ void ArCleanup(void)
 
 void ArDecodeAndPlaySample(char* sampleData, int sampleLength)
 {
-    int samplesDecoded;
-
-    // Throw this audio data out if we've fallen behind and there is
-    // more than 30ms of audio pending in the queue
-    if (LiGetPendingAudioDuration() > 30) {
-        return;
-    }
-
     if (!currentAudioStats.startTime) {
         currentAudioStats.startTime = CACurrentMediaTime();
     }
@@ -249,8 +242,24 @@ void ArDecodeAndPlaySample(char* sampleData, int sampleLength)
     int desiredBufferSize = frameSize * audioConfig.samplesPerFrame;
     void* buffer = [audioRenderer getAudioBuffer:&desiredBufferSize];
 
-    samplesDecoded = opus_multistream_decode_float(opusDecoder, (unsigned char*)sampleData, sampleLength,
+    int samplesDecoded = opus_multistream_decode_float(opusDecoder, (unsigned char*)sampleData, sampleLength,
                                                    (float*)buffer, desiredBufferSize / frameSize, 0);
+
+    if (samplesDecoded < 0) {
+        if (samplesDecoded != OPUS_BUFFER_TOO_SMALL) {
+            // OPUS_BUFFER_TOO_SMALL (-2) is a normal situation when sometimes we get Opus packets that are all 0's
+            Log(LOG_E, @"opus decode error: %d", samplesDecoded);
+        }
+        return;
+    }
+
+    static int lastBufferSize = 0;
+    if (desiredBufferSize != lastBufferSize) {
+        // light logging only if changed
+        Log(LOG_I, @"opus decoder: %d samples, %d opus bytes, %d PCM bytes",
+            samplesDecoded, sampleLength, desiredBufferSize);
+        lastBufferSize = desiredBufferSize;
+    }
 
     // Update desiredSize with the number of bytes actually populated by the decoding operation
     if (samplesDecoded > 0) {

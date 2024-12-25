@@ -25,16 +25,38 @@
     // Handle macOS route changes
     m_OutputAU.initListeners();
 #else
+    // Disable lowering volume of other audio streams
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
+
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(handleRouteChange:)
                                                  name:AVAudioSessionRouteChangeNotification
                                                object:nil];
+
+    if (@available(iOS 17.2, tvOS 17.2, *)) {
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(handleRenderingCapabilitiesChange:)
+                                                     name:AVAudioSessionRenderingCapabilitiesChangeNotification
+                                                   object:nil];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(handleRenderingModeChange:)
+                                                     name:AVAudioSessionRenderingModeChangeNotification
+                                                   object:nil];
+    }
 #endif
 
     return self;
 }
 
 -(void)start {
+    NSError *error = nil;
+    [[AVAudioSession sharedInstance] setActive:YES error:&error];
+    if (error != nil) {
+        CA_LogError(-1, "failed to setActive:YES: %@, ignoring...", error.localizedDescription);
+    }
+
     // After the AudioUnit starts it will begin calling the callback defined in
     // prepareForPlayback() to receive PCM for playback
     m_OutputAU.start();
@@ -42,6 +64,12 @@
 
 -(void)stop {
     m_OutputAU.stop();
+
+    NSError *error = nil;
+    [[AVAudioSession sharedInstance] setActive:NO error:&error];
+    if (error != nil) {
+        CA_LogError(-1, "failed to setActive:NO: %@, ignoring...", error.localizedDescription);
+    }
 }
 
 -(void *)getAudioBuffer:(int *)size
@@ -51,28 +79,6 @@
 
 -(BOOL)submitAudio:(int)bytesWritten
 {
-    if (!hasPlayedAudio) {
-        hasPlayedAudio = true;
-
-        // On first audio, set some audio session things:
-        // Disable lowering volume of other audio streams
-        AVAudioSession *session = [AVAudioSession sharedInstance];
-        [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
-
-#if TARGET_OS_VISION
-        if (m_OutputAU.isSpatial()) {
-            // define how our spatial audio works for Vision Pro:
-            // XXX user can choose between FixedSpatialExperience or HeadTrackedSpatialExperience
-            NSError *error;
-            [session setIntendedSpatialExperience:AVAudioSessionSpatialExperienceHeadTracked options:@{
-                @"AVAudioSessionSpatialExperienceOptionSoundStageSize" : AVAudioSessionSoundStageSizeLarge
-                @"AVAudioSessionSpatialExperienceOptionAnchoringStrategy" : AVAudioSessionAnchoringStrategyFront
-            } error:&error];
-        }
-#endif
-
-    }
-
     return m_OutputAU.submitAudio(bytesWritten);
 }
 
@@ -82,14 +88,51 @@
 
 -(void)handleRouteChange:(NSNotification *)notification
 {
-    if (m_OutputAU.isSpatial()) {
-        AUSpatialMixerOutputType outputType = m_OutputAU.getSpatialMixerOutputType();
-        Log(LOG_I, @"CoreAudioRenderer route change -> %@", m_OutputAU.getSMOTString(outputType));
-        m_OutputAU.setOutputType(outputType);
-    }
+    AUSpatialMixerOutputType outputType = m_OutputAU.getSpatialMixerOutputType();
+    Log(LOG_I, @"CoreAudioRenderer route change -> %@", m_OutputAU.getSMOTString(outputType));
 
     // always reinit on a change
     m_OutputAU.setNeedsReinit(true);
+}
+
+-(void)handleRenderingCapabilitiesChange:(NSNotification *)notification
+{
+    DEBUG_TRACE(@"Got renderingCapabilitiesChange notification");
+
+    if (@available(iOS 17.2, tvOS 17.2, *)) {
+        // this callback can indicate available channel layouts when using AirPlay
+        // Perhaps not very useful to us but interesting to catch anyway
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        NSArray<AVAudioChannelLayout *> *layouts = [session supportedOutputChannelLayouts];
+
+        for (AVAudioChannelLayout *layout in layouts) {
+            //AudioChannelLayoutTag layoutTag = layout.layoutTag;
+
+            // Print information about each layout
+            DEBUG_TRACE(@"Supported layout: %u", layout);
+        }
+    }
+}
+
+-(void)handleRenderingModeChange:(NSNotification *)notification
+{
+    DEBUG_TRACE(@"Got renderingModeChange notification");
+
+    if (@available(iOS 17.2, tvOS 17.2, *)) {
+        // this callback can indicate available channel layouts when using AirPlay
+        // Perhaps not very useful to us but interesting to catch anyway
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        AVAudioSessionRenderingMode renderingMode = [session renderingMode];
+
+        /*   AVAudioSessionRenderingModeNotApplicable           = 0,
+             AVAudioSessionRenderingModeMonoStereo              = 1,
+             AVAudioSessionRenderingModeSurround                = 2,
+             AVAudioSessionRenderingModeSpatialAudio            = 3,
+             AVAudioSessionRenderingModeDolbyAudio              = 4,
+             AVAudioSessionRenderingModeDolbyAtmos              = 5, */
+
+        DEBUG_TRACE(@"Rendering Mode: %@", renderingMode);
+    }
 }
 
 @end

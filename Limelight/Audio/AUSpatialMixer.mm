@@ -88,6 +88,21 @@ OSStatus AUSpatialMixer::setOutputType(AUSpatialMixerOutputType outputType)
     return AudioUnitSetProperty(getMixer(), kAudioUnitProperty_SpatialMixerOutputType, kAudioUnitScope_Global, 0, &outputType, sizeof(outputType));
 }
 
+// lightweight callback debug logging
+typedef enum {
+    STARVED,
+    OK
+} CallbackState;
+
+typedef struct {
+    CallbackState state;
+    int okCounter;
+    int starvedCounter;
+    int sinceStateChange;
+} CallbackHealth;
+
+static CallbackHealth ch = { STARVED, 0, 0, 0 };
+
 // realtime method
 OSStatus inputCallback(void *inRefCon,
                        AudioUnitRenderActionFlags *ioActionFlags,
@@ -116,20 +131,35 @@ OSStatus inputCallback(void *inRefCon,
     if (availableBytes < wantedBytes) {
         // not enough data for all channels, so we send back our fully zeroed-out buffer
         *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
-        return noErr;
+
+        ch.starvedCounter++;
+        if (ch.state == OK) {
+            // Log only once when switching states
+            DEBUG_TRACE(@"spatial callback starved after %d OK callbacks: wanted %d, avail %d\n",
+                        ch.okCounter, wantedBytes, availableBytes);
+            ch.okCounter = 0;
+            ch.state = STARVED;
+        }
     }
+    else {
+        // de-interleave ringBuffer PCM data into per-channel buffers
+        const float zero = 0.0f;
+        for (uint32_t channel = 0; channel < channelCount; channel++) {
+            float *channelBuffer = (float *)ioData->mBuffers[channel].mData;
+            vDSP_vsadd(ringBuffer + channel, channelCount, &zero, channelBuffer, 1, inNumberFrames);
+        }
 
-    // de-interleave ringBuffer PCM data into per-channel buffers
-    const float zero = 0.0f;
-    for (uint32_t channel = 0; channel < channelCount; channel++) {
-        float *channelBuffer = (float *)ioData->mBuffers[channel].mData;
-        vDSP_vsadd(ringBuffer + channel, channelCount, &zero, channelBuffer, 1, inNumberFrames);
+        ch.okCounter++;
+        if (ch.state == STARVED) {
+            // Log only once when switching states
+            DEBUG_TRACE(@"spatial callback OK after %d starved callbacks: consumed %d\n",
+                        ch.starvedCounter, wantedBytes);
+            ch.starvedCounter = 0;
+            ch.state = OK;
+        }
+
+        TPCircularBufferConsume((TPCircularBuffer *)me->m_RingBufferPtr, wantedBytes);
     }
-
-    TPCircularBufferConsume((TPCircularBuffer *)me->m_RingBufferPtr, wantedBytes);
-
-    // The Apple example included this but I'm not sure what it does?
-    (*ioActionFlags) = kAudioOfflineUnitRenderAction_Complete;
 
     return noErr;
 }
@@ -230,7 +260,7 @@ bool AUSpatialMixer::setup(AUSpatialMixerOutputType outputType, double inSampleR
             // XXX Head-tracking may cause audio glitches. It's off by default.
             //StreamingPreferences *prefs = StreamingPreferences::get();
             //if (prefs->spatialHeadTracking) {
-            if (1) {
+            if (0) {
                 uint32_t ht = 1;
                 status = AudioUnitSetProperty(getMixer(), kAudioUnitProperty_SpatialMixerEnableHeadTracking, kAudioUnitScope_Global, 0, &ht, sizeof(uint32_t));
                 if (status != noErr) {
@@ -281,7 +311,7 @@ bool AUSpatialMixer::setup(AUSpatialMixerOutputType outputType, double inSampleR
         status = AudioUnitSetProperty(getMixer(), kAudioUnitProperty_PresentPreset, kAudioUnitScope_Global, 0, &preset, sizeof(AUPreset));
         if (status != noErr) {
             CA_LogError(status, "Failed to set AUSpatialMixer factory preset");
-            return false;
+            // this happens with built-in speakers on my iPad M4 for some reason, I think we can ignore it
         }
     }
 

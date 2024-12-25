@@ -10,6 +10,7 @@
 #include <stdexcept>
 
 #define kMaxBufferSize 4096
+#define kBufferSizeFactor 1 // buffer will be 5ms * this
 
 OutputAU::OutputAU()
     : m_SpatialBuffer(2, kMaxBufferSize)
@@ -73,6 +74,21 @@ OSStatus renderCallbackSpatial(void                       * __nullable inRefCon,
     return noErr;
 }
 
+// lightweight callback debug logging
+typedef enum {
+    STARVED,
+    OK
+} CallbackState;
+
+typedef struct {
+    CallbackState state;
+    int okCounter;
+    int starvedCounter;
+    int sinceStateChange;
+} CallbackHealth;
+
+static CallbackHealth ch = { STARVED, 0, 0, 0 };
+
 // Warning: realtime callback function
 OSStatus renderCallbackDirect(void                       * __nullable inRefCon,
                               AudioUnitRenderActionFlags * __nullable ioActionFlags,
@@ -95,12 +111,30 @@ OSStatus renderCallbackDirect(void                       * __nullable inRefCon,
         //memset(targetBuffer, 0, bytesToCopy);
         vDSP_vclr(targetBuffer, 1, bytesToCopy);
         *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
+
+        ch.starvedCounter++;
+        if (ch.state == OK) {
+            // Log only once when switching states
+            DEBUG_TRACE(@"direct callback starved after %d OK callbacks: wanted %d, avail %d\n",
+                        ch.okCounter, bytesToCopy, availableBytes);
+            ch.okCounter = 0;
+            ch.state = STARVED;
+        }
     }
     else {
         // faster version of memcpy(targetBuffer, buffer, MIN(bytesToCopy, (int)availableBytes));
         //memcpy(targetBuffer, buffer, MIN(bytesToCopy, (int)availableBytes));
         vDSP_mmov(buffer, targetBuffer, 1, MIN(bytesToCopy, (int)availableBytes), 1, 1);
         TPCircularBufferConsume(&me->m_RingBuffer, MIN(bytesToCopy, (int)availableBytes));
+
+        ch.okCounter++;
+        if (ch.state == STARVED) {
+            // Log only once when switching states
+            DEBUG_TRACE(@"direct callback OK after %d starved callbacks: consumed %d\n",
+                        ch.starvedCounter, MIN(bytesToCopy, (int)availableBytes));
+            ch.starvedCounter = 0;
+            ch.state = OK;
+        }
     }
 
     return noErr;
@@ -114,8 +148,7 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
     m_channelCount    = opusConfig->channelCount;
     m_samplesPerFrame = opusConfig->samplesPerFrame;
 
-    // Request the OS set our buffer close to the Opus packet size
-    m_AudioPacketDuration = (m_samplesPerFrame / (m_sampleRate / 1000.0)) / 1000.0;
+    m_AudioPacketDuration = (m_samplesPerFrame / (m_sampleRate / 1000.0)) / 1000.0; // 5ms
 
     if (!initAudioUnit()) {
         DEBUG_TRACE(@"initAudioUnit failed");
@@ -412,25 +445,48 @@ bool OutputAU::initAudioUnit()
         DEBUG_TRACE(@"OutputAU output hardware latency: %d (%0.2f ms)", latencyFrames, m_OutputHardwareLatency * 1000.0);
     }
 #else
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+
+    // iOS metadata
+    {
+        double preferredSampleRate = [session preferredSampleRate];
+        double currentSampleRate = [session sampleRate];
+        NSTimeInterval preferredIOBufferDuration = [session preferredIOBufferDuration];
+        NSTimeInterval currentIOBufferDuration = [session IOBufferDuration];
+        DEBUG_TRACE(@"OutputAU preferred/current samplerate: %.0f/%.0f buffer duration: %f/%f",
+                    preferredSampleRate, currentSampleRate, preferredIOBufferDuration, currentIOBufferDuration);
+    }
+
     // iOS hardware latency
     {
-        m_OutputHardwareLatency = [[AVAudioSession sharedInstance] outputLatency];
+        m_OutputHardwareLatency = [session outputLatency];
         DEBUG_TRACE(@"OutputAU output hardware latency: %d (%0.2f ms)", (int)(m_OutputHardwareLatency * m_sampleRate), m_OutputHardwareLatency * 1000.0);
     }
 
-    // iOS preferred buffer size
+    // iOS buffer size
     {
+        double wantedBuffer = m_AudioPacketDuration * kBufferSizeFactor;
+
         NSError *error = nil;
-        [[AVAudioSession sharedInstance] setPreferredIOBufferDuration:m_AudioPacketDuration error:&error];
+        [session setPreferredIOBufferDuration:wantedBuffer error:&error];
         if (error != nil) {
-            CA_LogError(-1, "failed to set preferred buffer duration to %f: %@", m_AudioPacketDuration, error.localizedDescription);
+            CA_LogError(-1, "failed to set preferred buffer duration to %f: %@", wantedBuffer, error.localizedDescription);
             return false;
         }
+        DEBUG_TRACE(@"OutputAU setPreferredIOBufferDuration %f", wantedBuffer);
 
         // see what we got
-        double bufferDuration = [[AVAudioSession sharedInstance] IOBufferDuration];
+        double bufferDuration = [session IOBufferDuration];
         m_TotalSoftwareLatency += bufferDuration;
-        DEBUG_TRACE(@"OutputAU output now has actual IOBufferDuration of %d (%0.3f ms)", (int)(bufferDuration * m_sampleRate), bufferDuration * 1000.0);
+        DEBUG_TRACE(@"OutputAU actual IOBufferDuration of %f", bufferDuration);
+
+        // Set the maximum frames we can process per callback
+//        uint32_t mfps = 512;
+//        status = AudioUnitSetProperty(m_OutputAU, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &mfps, sizeof(mfps));
+//        if (status != noErr) {
+//            CA_LogError(status, "Failed to set OutputAU MaximumFramesPerSlice");
+//            return false;
+//        }
     }
 #endif
 
@@ -453,7 +509,8 @@ bool OutputAU::initAudioUnit()
 bool OutputAU::initRingBuffer()
 {
     // Always buffer at least 2 packets, up to 30ms worth of packets
-    int packetsToBuffer = MAX(2, (int)ceil(0.030 / m_AudioPacketDuration));
+    double bufferDuration = m_AudioPacketDuration * kBufferSizeFactor;
+    int packetsToBuffer = MAX(2, (int)ceil(0.030 / bufferDuration));
 
     bool ok = TPCircularBufferInit(&m_RingBuffer,
                                    sizeof(float) *
@@ -608,13 +665,10 @@ bool OutputAU::submitAudio(int bytesWritten)
         return false;
     }
 
-    if (bytesWritten == 0) {
-        // Nothing to do
-        return true;
-    }
-
     // drop packet if we've fallen behind Moonlight's queue by at least 30 ms
-    if (LiGetPendingAudioDuration() > 30) {
+    int pendingAudio = LiGetPendingAudioDuration();
+    if (pendingAudio > 30) {
+        DEBUG_TRACE(@"submitAudio skip-ahead, pending audio duration: %d ms", pendingAudio);
         return true;
     }
 
