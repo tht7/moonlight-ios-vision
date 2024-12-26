@@ -544,7 +544,7 @@ BOOL isCustomResolution(CGSize res) {
                            framerate:framerate
                               height:height
                                width:width
-                         audioConfig:8 // XXX
+                         audioConfig:2 // XXX
                     onscreenControls:onscreenControls
                        optimizeGames:optimizeGames
                      multiController:multiController

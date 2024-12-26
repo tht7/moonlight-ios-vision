@@ -2,10 +2,12 @@
 
 #include <AudioToolbox/AudioToolbox.h>
 
-#if DEBUG
-# define DEBUG_TRACE(...) Log(LOG_I, __VA_ARGS__)
+#ifdef DEBUG
+  #define DEBUG_TRACE( s, ... ) NSLog( @"<%@:%d> %@", [[NSString stringWithUTF8String:__FILE__] lastPathComponent], __LINE__,  [NSString stringWithFormat:(s), ##__VA_ARGS__] )
+  #define DEBUG_CSTR( s, ... ) fprintf(stderr, (s), ##__VA_ARGS__);
 #else
-# define DEBUG_TRACE(...) do {} while (0) // no-op
+  #define DEBUG_TRACE( s, ... )
+  #define DEBUG_CSTR( s, ... )
 #endif
 
 #ifdef __cplusplus
@@ -65,24 +67,23 @@ static void CA_PrintASBD(const char *description, const AudioStreamBasicDescript
 }
 
 // classic hex dump
-static void CA_HexDump(const float *buffer, size_t length)
+static void CA_HexDump(const uint8_t *bytePtr, size_t length)
 {
-    const uint8_t *bytePtr = (const uint8_t *)buffer;
-    size_t bytesToPrint = length * sizeof(float);
+    size_t bytesToPrint = length;
 
-    // Print 32 bytes per line
-    for (size_t i = 0; i < bytesToPrint; i += 32) {
+    // Print 16 bytes per line
+    for (size_t i = 0; i < bytesToPrint; i += 16) {
         printf("%08lx  ", (unsigned long)(bytePtr + i));
 
         // Print the hex values (32 bytes)
-        for (size_t j = 0; j < 32 && (i + j) < bytesToPrint; ++j) {
+        for (size_t j = 0; j < 16 && (i + j) < bytesToPrint; ++j) {
             printf("%02x ", bytePtr[i + j]);
             if (j == 15) printf(" ");
         }
 
         printf(" |");
 
-        for (size_t j = 0; j < 32 && (i + j) < bytesToPrint; ++j) {
+        for (size_t j = 0; j < 16 && (i + j) < bytesToPrint; ++j) {
             uint8_t byte = bytePtr[i + j];
             if (byte >= 32 && byte <= 126)
                 printf("%c", byte);

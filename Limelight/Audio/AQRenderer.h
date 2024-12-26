@@ -2,15 +2,14 @@
 
 #include <Limelight.h>
 
-@interface CoreAudioRenderer : NSObject
+@interface AQRenderer : NSObject
 
 - (instancetype)initWithConfig:(const OPUS_MULTISTREAM_CONFIGURATION*)opusConfig;
 
 - (void)start;
 - (void)stop;
 - (void *)getAudioBuffer:(int *)size;
-- (BOOL)submitAudio:(int)bytesWritten opusBytes:(int)opusBytes decodeStartTime:(CFTimeInterval)decodeStartTime;
-- (NSString *)getAudioStatsString;
+- (bool)submitAudio:(int)bytesWritten;
 - (void)handleRouteChange:(NSNotification *)notification;
 - (void)handleRenderingCapabilitiesChange:(NSNotification *)notification;
 - (void)handleRenderingModeChange:(NSNotification *)notification;

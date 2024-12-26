@@ -51,11 +51,16 @@
 }
 
 -(void)start {
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+
     NSError *error = nil;
-    [[AVAudioSession sharedInstance] setActive:YES error:&error];
+    [session setActive:YES error:&error];
     if (error != nil) {
         CA_LogError(-1, "failed to setActive:YES: %@, ignoring...", error.localizedDescription);
     }
+
+    // refresh device properties that may change after setActive
+    m_OutputAU.refreshDeviceProperties();
 
     // After the AudioUnit starts it will begin calling the callback defined in
     // prepareForPlayback() to receive PCM for playback
@@ -77,9 +82,14 @@
     return m_OutputAU.getAudioBuffer(size);
 }
 
--(BOOL)submitAudio:(int)bytesWritten
+-(BOOL)submitAudio:(int)bytesWritten opusBytes:(int)opusBytes decodeStartTime:(CFTimeInterval)decodeStartTime
 {
-    return m_OutputAU.submitAudio(bytesWritten);
+    return m_OutputAU.submitAudio(bytesWritten, opusBytes, decodeStartTime);
+}
+
+-(NSString *)getAudioStatsString
+{
+    return m_OutputAU.getAudioStatsString();
 }
 
 -(void)dealloc {

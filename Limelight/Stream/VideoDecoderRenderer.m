@@ -64,7 +64,7 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     // Hide the layer until we get an IDR frame. This ensures we
     // can see the loading progress label as the stream is starting.
     displayLayer.hidden = YES;
-    
+
     if (oldLayer != nil) {
         // Switch out the old display layer with the new one
         [_view.layer replaceSublayer:oldLayer with:displayLayer];
@@ -123,7 +123,6 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
     
     while (LiPollNextVideoFrame(&handle, &du)) {
         LiCompleteVideoFrame(handle, DrSubmitDecodeUnit(du));
-        
         if (framePacing) {
             // Calculate the actual display refresh rate
             double displayRefreshRate = 1 / (_displayLink.targetTimestamp - _displayLink.timestamp);
@@ -594,6 +593,12 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
         CFRelease(dataBlockBuffer);
         CFRelease(frameBlockBuffer);
         return DR_NEED_IDR;
+    }
+
+    static int once = 0;
+    if (++once % 1000) {
+        CMTime pts = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer);
+        Log(LOG_I, @"video du->pts %d pts %f @ %f", du->presentationTimeMs, CMTimeGetSeconds(pts), CACurrentMediaTime());
     }
 
     // Enqueue the next frame

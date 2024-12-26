@@ -7,6 +7,8 @@
 //
 
 #import "CoreAudioRenderer.h"
+#import "AQRenderer.h"
+#import "AVSBRenderer.h"
 #import "VideoDecoderRenderer.h"
 #import "StreamConfiguration.h"
 
@@ -41,6 +43,7 @@ typedef struct {
 -(void) terminate;
 -(void) main;
 -(BOOL) getVideoStats:(video_stats_t*)stats;
+-(NSString *) getAudioStatsString;
 -(NSString*) getActiveCodecName;
 
 @end

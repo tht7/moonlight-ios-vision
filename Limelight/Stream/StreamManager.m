@@ -147,6 +147,28 @@
     return TRUE;
 }
 
+// quick hack for both stats
+#define COLUMN_WIDTH 30
+static NSString *interleaveStrings(NSString *str1, NSString *str2) {
+    // Split the strings into arrays of lines
+    NSArray *lines1 = [str1 componentsSeparatedByString:@"\n"];
+    NSArray *lines2 = [str2 componentsSeparatedByString:@"\n"];
+
+    NSUInteger maxLines = MAX(lines1.count, lines2.count);
+    NSMutableString *result = [NSMutableString string];
+
+    for (NSUInteger i = 0; i < maxLines; i++) {
+        NSString *line1 = (i < lines1.count) ? lines1[i] : @"";
+        NSString *line2 = (i < lines2.count) ? lines2[i] : @"";
+
+        NSString *formattedLine = [NSString stringWithFormat:@"%-*s%@\n", COLUMN_WIDTH, [line1 UTF8String], line2];
+
+        [result appendString:formattedLine];
+    }
+
+    return [result copy];
+}
+
 - (NSString*) getStatsOverlayText {
     video_stats_t stats;
     
@@ -157,7 +179,7 @@
     if (![_connection getVideoStats:&stats]) {
         return nil;
     }
-    
+
     uint32_t rtt, variance;
     NSString* latencyString;
     if (LiGetEstimatedRttInfo(&rtt, &variance)) {
@@ -179,7 +201,7 @@
     }
     
     float interval = stats.endTime - stats.startTime;
-    return [NSString stringWithFormat:@"Video stream: %dx%d %.2f FPS (Codec: %@)\nFrames dropped by your network connection: %.2f%%\nAverage network latency: %@%@",
+    NSString *videoStatsStr = [NSString stringWithFormat:@"Video stream: %dx%d %.2f FPS (Codec: %@)\nFrames dropped by your network connection: %.2f%%\nAverage network latency: %@%@",
             _config.width,
             _config.height,
             stats.totalFrames / interval,
@@ -187,6 +209,14 @@
             stats.networkDroppedFrames / interval,
             latencyString,
             hostProcessingString];
+
+    NSString *audioStatsStr = [_connection getAudioStatsString];
+    if (audioStatsStr) {
+        return interleaveStrings(videoStatsStr, audioStatsStr);
+    }
+    else {
+        return videoStatsStr;
+    }
 }
 
 @end

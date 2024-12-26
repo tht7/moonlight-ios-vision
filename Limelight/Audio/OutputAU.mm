@@ -1,5 +1,6 @@
 #include "OutputAU.h"
 #include "CoreAudioHelpers.h"
+#include "AudioStats.h"
 
 #include <Accelerate/Accelerate.h>
 #import <AVFoundation/AVFoundation.h>
@@ -11,9 +12,14 @@
 
 #define kMaxBufferSize 4096
 #define kBufferSizeFactor 1 // buffer will be 5ms * this
+#define BUFFER_DURATION_MS 50 // XXX allow users to configure this
 
 OutputAU::OutputAU()
-    : m_SpatialBuffer(2, kMaxBufferSize)
+  : m_SpatialBuffer(2, kMaxBufferSize),
+    m_bitrateSum(0),
+    m_opusPackets(0),
+    m_opusToPCMTime(0.0),
+    m_PCMToOutputTime(0.0)
 {
     AudioComponentDescription description;
     description.componentType = kAudioUnitType_Output;
@@ -144,11 +150,12 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
 {
     OSStatus status = noErr;
 
-    m_sampleRate      = opusConfig->sampleRate;
+    m_sampleRateOpus  = opusConfig->sampleRate;
+    m_sampleRateHW    = getSampleRate();
     m_channelCount    = opusConfig->channelCount;
     m_samplesPerFrame = opusConfig->samplesPerFrame;
 
-    m_AudioPacketDuration = (m_samplesPerFrame / (m_sampleRate / 1000.0)) / 1000.0; // 5ms
+    m_AudioPacketDuration = (m_samplesPerFrame / (m_sampleRateOpus / 1000.0)) / 1000.0; // 5ms
 
     if (!initAudioUnit()) {
         DEBUG_TRACE(@"initAudioUnit failed");
@@ -164,8 +171,10 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
     int physicalOutputChannels = (int)[session maximumOutputNumberOfChannels];
 
     AUSpatialMixerOutputType outputType = getSpatialMixerOutputType();
-    Log(LOG_I, @"OutputAU spatial mixer output type %@ with %d physical channels",
-        getSMOTString(outputType), physicalOutputChannels);
+
+    Log(LOG_I, @"OutputAU preparing, input: opus %d channels, %d spf, %.3f packet size -> output: %d channels, %.0f khz, %f IOBuffer, %@",
+        m_channelCount, m_samplesPerFrame, m_AudioPacketDuration,
+        physicalOutputChannels, m_sampleRateHW, m_IOBufferDuration, getSMOTString(outputType));
 
     m_isSpatial = false;
     if (m_channelCount > 2) {
@@ -177,7 +186,7 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
     // indicate the format our callback will provide samples in
     AudioStreamBasicDescription streamDesc;
     memset(&streamDesc, 0, sizeof(AudioStreamBasicDescription));
-    streamDesc.mSampleRate       = m_sampleRate;
+    streamDesc.mSampleRate       = m_sampleRateOpus;
     streamDesc.mFormatID         = kAudioFormatLinearPCM;
     streamDesc.mFormatFlags      = kAudioFormatFlagIsFloat | kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked;
     streamDesc.mFramesPerPacket  = 1;
@@ -186,13 +195,17 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
     streamDesc.mBytesPerPacket   = 4 * m_channelCount;
     streamDesc.mBytesPerFrame    = streamDesc.mBytesPerPacket;
 
+    // XXX uncomment to test passing 8 channels to iOS
+    // Does not currently work (only passes 2 channels)
+    m_isSpatial = false;
+
     if (m_isSpatial) {
         // when the spatial mixer is used, the callback becomes non-interleaved
         streamDesc.mFormatFlags    |= kAudioFormatFlagIsNonInterleaved;
         streamDesc.mBytesPerPacket = 4;
         streamDesc.mBytesPerFrame  = 4;
 
-        if (!m_SpatialAU.setup(outputType, m_sampleRate, getSampleRate(), m_channelCount)) {
+        if (!m_SpatialAU.setup(outputType, m_sampleRateOpus, m_sampleRateHW, m_channelCount)) {
             DEBUG_TRACE(@"m_SpatialAU.setup failed");
             return false;
         }
@@ -217,16 +230,30 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
             return false;
         }
 
-        // Allow multichannel to any device with >2 channels
-        if (m_channelCount > 2 && physicalOutputChannels > 2) {
-            NSError *error = nil;
-            Log(LOG_I, @"Multichannel output is available, will use passthrough mode");
-            [session setPreferredOutputNumberOfChannels:m_channelCount error:&error];
-            if (error != nil) {
-                Log(LOG_W, @"Warning: failed to set preferred output number of channels to %d: %@", m_channelCount, error.localizedDescription);
-                // probably ok to continue
+        // XXX testing 8 channels to iOS
+        if (m_channelCount > 2) {
+            if (@available(iOS 15.0, tvOS 15.0, *)) {
+                // not sure what this does
+                NSError *error = nil;
+                [session setSupportsMultichannelContent:YES error:&error];
+                if (error != nil) {
+                    Log(LOG_W, @"Warning: failed to setSupportsMultichannelContent:YES: %@", m_channelCount, error.localizedDescription);
+                    // probably ok to continue
+                }
+                else {
+                    DEBUG_TRACE(@"OutputAU setSupportsMultichannelContent:YES");
+                }
             }
         }
+
+        NSError *error = nil;
+        Log(LOG_I, @"Multichannel output is available, will use passthrough mode");
+        [session setPreferredOutputNumberOfChannels:m_channelCount error:&error];
+        if (error != nil) {
+            Log(LOG_W, @"Warning: failed to set preferred output number of channels to %d: %@", m_channelCount, error.localizedDescription);
+            // probably ok to continue
+        }
+        DEBUG_TRACE(@"OutputAU setPreferredOutputNumberOfChannels:%d", m_channelCount);
 
         // Define the direct output stream format to ensure correct multichannel mapping
         AudioChannelLayoutTag layout;
@@ -247,7 +274,7 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
 
         AVAudioChannelLayout* outLayout = [AVAudioChannelLayout layoutWithLayoutTag:layout];
         AVAudioFormat *format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
-                                                                 sampleRate:m_sampleRate
+                                                                 sampleRate:m_sampleRateOpus
                                                                 interleaved:YES
                                                               channelLayout:outLayout];
 
@@ -261,6 +288,15 @@ bool OutputAU::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConf
             return status;
         }
         Log(LOG_I, @"OutputAU passthrough channel layout set for %d channels", m_channelCount);
+
+//        {
+//            // XXX trying to set headphones to 8 channels
+//            status = AudioUnitSetProperty(m_OutputAU, kAudioUnitProperty_AudioChannelLayout, kAudioUnitScope_Output, 0, outLayout2, sizeof(AudioChannelLayout));
+//            if (status != noErr) {
+//                CA_LogError(status, "Failed to set OutputAU AudioChannelLayout scope=%d, layout=%d", kAudioUnitScope_Output, outLayout2);
+//            }
+//            Log(LOG_I, @"OutputAU passthrough channel layout set for %d channels", m_channelCount);
+//        }
     }
 
     return true;
@@ -447,20 +483,15 @@ bool OutputAU::initAudioUnit()
 #else
     AVAudioSession *session = [AVAudioSession sharedInstance];
 
-    // iOS metadata
+    // set iOS metadata
     {
-        double preferredSampleRate = [session preferredSampleRate];
-        double currentSampleRate = [session sampleRate];
-        NSTimeInterval preferredIOBufferDuration = [session preferredIOBufferDuration];
-        NSTimeInterval currentIOBufferDuration = [session IOBufferDuration];
-        DEBUG_TRACE(@"OutputAU preferred/current samplerate: %.0f/%.0f buffer duration: %f/%f",
-                    preferredSampleRate, currentSampleRate, preferredIOBufferDuration, currentIOBufferDuration);
-    }
-
-    // iOS hardware latency
-    {
-        m_OutputHardwareLatency = [session outputLatency];
-        DEBUG_TRACE(@"OutputAU output hardware latency: %d (%0.2f ms)", (int)(m_OutputHardwareLatency * m_sampleRate), m_OutputHardwareLatency * 1000.0);
+        NSError *error = nil;
+        [session setPreferredSampleRate:m_sampleRateOpus error:&error];
+        if (error != nil) {
+            CA_LogError(-1, "failed to set preferred samplerate to %.0f: %@", m_sampleRateOpus, error.localizedDescription);
+            // maybe ok?
+        }
+        // actual samplerate is checked in refreshDeviceMetadata() after setActive
     }
 
     // iOS buffer size
@@ -474,20 +505,9 @@ bool OutputAU::initAudioUnit()
             return false;
         }
         DEBUG_TRACE(@"OutputAU setPreferredIOBufferDuration %f", wantedBuffer);
-
-        // see what we got
-        double bufferDuration = [session IOBufferDuration];
-        m_TotalSoftwareLatency += bufferDuration;
-        DEBUG_TRACE(@"OutputAU actual IOBufferDuration of %f", bufferDuration);
-
-        // Set the maximum frames we can process per callback
-//        uint32_t mfps = 512;
-//        status = AudioUnitSetProperty(m_OutputAU, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &mfps, sizeof(mfps));
-//        if (status != noErr) {
-//            CA_LogError(status, "Failed to set OutputAU MaximumFramesPerSlice");
-//            return false;
-//        }
+        // actual buffer is checked in refreshDeviceMetadata() after setActive
     }
+
 #endif
 
     // The time, in seconds, that it takes an audio unit to move an audio sample from its input to its output.
@@ -508,23 +528,22 @@ bool OutputAU::initAudioUnit()
 
 bool OutputAU::initRingBuffer()
 {
-    // Always buffer at least 2 packets, up to 30ms worth of packets
-    double bufferDuration = m_AudioPacketDuration * kBufferSizeFactor;
-    int packetsToBuffer = MAX(2, (int)ceil(0.030 / bufferDuration));
-
-    bool ok = TPCircularBufferInit(&m_RingBuffer,
-                                   sizeof(float) *
-                                   m_channelCount *
-                                   m_samplesPerFrame *
-                                   packetsToBuffer);
-    if (!ok) return false;
+    // init ring buffer, entries = 16 when duration = 80ms and packet size 5ms
+    int packetsToBuffer = BUFFER_DURATION_MS / (m_samplesPerFrame / (m_sampleRateOpus / 1000.0));
+    int ringBufferSize = packetsToBuffer * m_channelCount * m_samplesPerFrame * sizeof(float);
+    bool ok = TPCircularBufferInit(&m_RingBuffer, ringBufferSize);
+    if (!ok) {
+        CA_LogError(-1, "TPCircularBufferInit failed");
+        return false;
+    }
 
     // Spatial mixer code needs to be able to read from the ring buffer
     m_SpatialAU.setRingBufferPtr(&m_RingBuffer);
 
     // real length will be larger than requested due to memory page alignment
     m_BufferSize = m_RingBuffer.length;
-    DEBUG_TRACE(@"OutputAU ring buffer init, %d packets (%d bytes)", packetsToBuffer, m_BufferSize);
+    DEBUG_TRACE(@"OutputAU ringBuffer created for %d packets, size %d (adjusted %d)",
+                packetsToBuffer, ringBufferSize, m_BufferSize);
 
     return true;
 }
@@ -655,7 +674,7 @@ void *OutputAU::getAudioBuffer(int *size)
     return ptr;
 }
 
-bool OutputAU::submitAudio(int bytesWritten)
+bool OutputAU::submitAudio(int bytesWritten, int opusBytes, CFTimeInterval decodeStartTime)
 {
     // Called after Opus has decoded bytesWritten bytes of PCM into our buffer
 
@@ -675,6 +694,11 @@ bool OutputAU::submitAudio(int bytesWritten)
     // Advance the write pointer
     TPCircularBufferProduce(&m_RingBuffer, bytesWritten);
 
+    // accumulate stats
+    m_bitrateSum += opusBytes;
+    m_opusPackets++;
+    m_opusToPCMTime += (CACurrentMediaTime() - decodeStartTime);
+
     return true;
 }
 
@@ -691,19 +715,51 @@ double OutputAU::getSampleRate()
     }
     return asbd.mSampleRate;
 #else
-    double outSampleRate = 0.0;
-    uint32_t size = sizeof(double);
-    OSStatus status = AudioUnitGetProperty(m_OutputAU, kAudioUnitProperty_SampleRate, kAudioUnitScope_Output, 0, &outSampleRate, &size);
-    if (status != noErr) {
-        return -1;
-    }
-    return outSampleRate;
+    return [[AVAudioSession sharedInstance] sampleRate];
 #endif
 }
 
 bool OutputAU::start()
 {
     return AudioOutputUnitStart(m_OutputAU) == noErr;
+}
+
+void OutputAU::refreshDeviceProperties() {
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+
+    m_IOBufferDuration      = [session IOBufferDuration];
+    m_sampleRateHW          = [session sampleRate];
+    m_OutputHardwareLatency = [session outputLatency];
+    m_outputChannels        = (int)[session outputNumberOfChannels];
+    m_outputType            = getSMOTString(getSpatialMixerOutputType());
+
+    // not sure if we want these yet
+    int inputChannels                            = (int)[session inputNumberOfChannels];
+    int maximumOutputNumberOfChannels            = (int)[session maximumOutputNumberOfChannels];
+    AVAudioSessionMode mode                      = [session mode];
+    bool supportsMultichannelContent             = false;
+    AVAudioSessionRenderingMode renderingMode    = AVAudioSessionRenderingModeMonoStereo;
+
+    DEBUG_TRACE(@"refreshed device: %@, %dch, sampleRate %.2f, IOBufferDuration %f, latency %d (%0.2f ms)",
+                m_outputType, m_outputChannels, m_sampleRateHW, m_IOBufferDuration,
+                (int)(m_OutputHardwareLatency * m_sampleRateHW), m_OutputHardwareLatency * 1000.0);
+
+    if (@available(iOS 17.2, tvOS 17.2, *)) {
+
+        AVAudioSessionRouteDescription *currentRoute = [session currentRoute];
+        AVAudioSessionPortDescription *outputPort    = currentRoute.outputs.firstObject;
+        bool isSpatialAudioEnabled                   = outputPort.isSpatialAudioEnabled;
+        supportsMultichannelContent                  = [session supportsMultichannelContent];
+
+        DEBUG_TRACE(@"isSpatialAudioEnabled %d, supportsMultichannelContent %d",
+                    isSpatialAudioEnabled, supportsMultichannelContent);
+        DEBUG_TRACE(@"currentRoute: %@", currentRoute);
+        DEBUG_TRACE(@"channels: %@", outputPort.channels);
+        DEBUG_TRACE(@"renderingMode: %@", session.renderingMode);
+    }
+
+//    DEBUG_TRACE(@"inputChannels %d, maximumOutputNumberOfChannels %d, mode %@, renderingMode %@, supportsMultichannelContent %@",
+//                inputChannels, maximumOutputNumberOfChannels, mode, renderingMode, supportsMultichannelContent);
 }
 
 bool OutputAU::stop()
@@ -724,4 +780,40 @@ OSStatus OutputAU::setOutputType(AUSpatialMixerOutputType outputType)
 void OutputAU::setNeedsReinit(bool value)
 {
     m_needsReinit = value;
+}
+
+// update rate is based on how often we're called
+NSString * OutputAU::getAudioStatsString()
+{
+    static EWMA bitrateAvg(0.2);
+    static EWMA decodeTimeAvg(0.2);
+    static CFTimeInterval lastTick = CACurrentMediaTime();
+    CFTimeInterval now = CACurrentMediaTime();
+
+    // add a new sample to the bitrate moving average
+    bitrateAvg.addSample((double)(m_bitrateSum * 8) / 1000.0 / (now - lastTick));
+
+    // track audio decode time as the sum of opus decode -> ring buffer and ring buffer -> processing -> output
+    // it doesn't include RTP processing time but probably should
+    decodeTimeAvg.addSample((m_opusToPCMTime / 1000.0) / m_opusPackets);
+
+    // next call will use data starting right now
+    lastTick = now;
+    m_bitrateSum = 0;
+    m_opusPackets = 0;
+
+    uint32_t freeBytes = 0;
+    TPCircularBufferTail(&m_RingBuffer, &freeBytes);
+    uint32_t pcmBytes = m_RingBuffer.length - freeBytes;
+    double pcmDuration = pcmBytes * 1.0 / (m_channelCount * m_sampleRateOpus * sizeof(float));
+
+    NSString *out = [NSString stringWithFormat:@"Audio stream: %dch Opus @ %.0f kbps\nBuffer: %.0f%% full (%.2f ms)\nAudio decode: %.2f ms",
+                     m_channelCount, bitrateAvg.getOutput(),
+                     (double)(pcmBytes * 100.0 / m_RingBuffer.length), pcmDuration * 1000.0,
+                     decodeTimeAvg.getOutput()];
+
+    DEBUG_TRACE(@"buffer health: %.2f %% full, PCM bytes: %d (%.2f ms), free bytes: %d, bitrate: %.0f kbps, decode time: %.2f ms",
+                (double)(pcmBytes * 100.0 / m_RingBuffer.length), pcmBytes, pcmDuration * 1000.0, freeBytes, bitrateAvg.getOutput(), decodeTimeAvg.getOutput());
+
+    return out;
 }

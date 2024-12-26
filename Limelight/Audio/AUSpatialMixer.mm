@@ -175,6 +175,7 @@ bool AUSpatialMixer::setup(AUSpatialMixerOutputType outputType, double inSampleR
     }
 
     // The original example code appears to have a bug here and used inOutputSampleRate, but this should be inInputSampleRate.
+    // Spatial Mixer always operates at 48k and the final output samplerate is configured in OutputAU.
 
     // Set up the output stream format and channel layout for stereo.
     status = setStreamFormatAndACL(inSampleRate, kAudioChannelLayoutTag_Stereo, kAudioUnitScope_Output, 0);
@@ -260,7 +261,7 @@ bool AUSpatialMixer::setup(AUSpatialMixerOutputType outputType, double inSampleR
             // XXX Head-tracking may cause audio glitches. It's off by default.
             //StreamingPreferences *prefs = StreamingPreferences::get();
             //if (prefs->spatialHeadTracking) {
-            if (0) {
+            if (1) {
                 uint32_t ht = 1;
                 status = AudioUnitSetProperty(getMixer(), kAudioUnitProperty_SpatialMixerEnableHeadTracking, kAudioUnitScope_Global, 0, &ht, sizeof(uint32_t));
                 if (status != noErr) {
@@ -312,6 +313,19 @@ bool AUSpatialMixer::setup(AUSpatialMixerOutputType outputType, double inSampleR
         if (status != noErr) {
             CA_LogError(status, "Failed to set AUSpatialMixer factory preset");
             // this happens with built-in speakers on my iPad M4 for some reason, I think we can ignore it
+        }
+    }
+
+    if (@available(iOS 15.0, tvOS 15.0, *)) {
+        // not sure what this does...
+        NSError *error = nil;
+        [[AVAudioSession sharedInstance] setSupportsMultichannelContent:YES error:&error];
+        if (error != nil) {
+            Log(LOG_W, @"Warning: failed to setSupportsMultichannelContent:YES: %@", error.localizedDescription);
+            // probably ok to continue
+        }
+        else {
+            DEBUG_TRACE(@"AUSpatialMixer setSupportsMultichannelContent:YES");
         }
     }
 

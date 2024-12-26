@@ -3,6 +3,7 @@
 #include "TPCircularBuffer.h"
 #include "AllocatedAudioBufferList.h"
 #include "AUSpatialMixer.h"
+#include "AudioStats.h"
 
 #import <AudioToolbox/AudioToolbox.h>
 
@@ -22,17 +23,17 @@ public:
     bool prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConfig);
     bool initAudioUnit();
     bool initRingBuffer();
+    void setCallback(void * context, AURenderCallback callback);
+    bool start();
+    void refreshDeviceProperties();
+    void *getAudioBuffer(int *size);
+    bool submitAudio(int bytesWritten, int opusBytes, CFTimeInterval decodeStartTime);
+    NSString * getAudioStatsString();
+    bool stop();
 
     AUSpatialMixerOutputType getSpatialMixerOutputType();
     NSString *getSMOTString(AUSpatialMixerOutputType type);
-
-    void setCallback(void * context, AURenderCallback callback);
-    void *getAudioBuffer(int *size);
-    bool submitAudio(int bytesWritten);
     double getSampleRate();
-
-    bool start();
-    bool stop();
     bool isSpatial();
     OSStatus setOutputType(AUSpatialMixerOutputType outputType);
     void setNeedsReinit(bool value);
@@ -45,9 +46,11 @@ private:
     AUSpatialMixer m_SpatialAU;
 
     // input stream metadata from opusConfig
-    double m_sampleRate;
+    double m_sampleRateOpus;
+    double m_sampleRateHW;
     int m_channelCount;
     int m_samplesPerFrame;
+    double m_IOBufferDuration;
 
     // output device metadata
 #if TARGET_OS_OSX
@@ -58,6 +61,8 @@ private:
     char *m_OutputDeviceName;
     char m_OutputTransportType[5];
     char m_OutputDataSource[5];
+    int m_outputChannels;
+    const NSString *m_outputType;
 
     // latency
     double m_OutputHardwareLatency;
@@ -77,4 +82,8 @@ private:
     // stats
     uint32_t m_BufferSize;
     uint32_t m_BufferFilledBytes;
+    uint32_t m_bitrateSum; // XXX atomic?
+    uint32_t m_opusPackets;
+    double m_opusToPCMTime;
+    double m_PCMToOutputTime;
 };
