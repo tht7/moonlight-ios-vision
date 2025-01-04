@@ -1,5 +1,7 @@
 #pragma once
 
+#import "AVSync.h"
+
 #import <AVFoundation/AVFoundation.h>
 
 #include <Limelight.h>
@@ -13,6 +15,8 @@ typedef struct __attribute__((__packed__)) {
 } PCMHeader;
 
 @interface AVSBRenderer : NSObject
+
++ (AVSync *)getAvSync;
 
 - (instancetype)initWithConfig:(const OPUS_MULTISTREAM_CONFIGURATION*)opusConfig;
 - (void)start;

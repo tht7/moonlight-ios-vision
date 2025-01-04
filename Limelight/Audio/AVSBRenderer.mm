@@ -1,5 +1,6 @@
 
 #import "AVSBRenderer.h"
+#import "AVSync.h"
 #import "TPCircularBuffer.h"
 #import "CoreAudioHelpers.h"
 #include "AudioStats.h"
@@ -48,6 +49,16 @@
     uint32_t _bitrateSum;
     uint32_t _opusPackets;
     double _opusToEnqueueTime; // average time from receiving an opus packet to enqueueing its PCM with AVSampleBuffer.
+}
+
+static AVSync* avSync;
+
++(AVSync *)getAvSync
+{
+    if (!avSync) {
+        avSync = [[AVSync alloc] init];
+    }
+    return avSync;
 }
 
 -(instancetype)initWithConfig:(const OPUS_MULTISTREAM_CONFIGURATION *)inOpusConfig
@@ -298,10 +309,10 @@
         if (_needsReinit)
             break;
 
-        // temporary 1s stats ticker
+        // temporary 5s stats ticker
         static CFTimeInterval lastStatsDisplay = 0.0;
         CFTimeInterval now = CACurrentMediaTime();
-        if (now - lastStatsDisplay > 1.0) {
+        if (now - lastStatsDisplay > 5.0) {
             lastStatsDisplay = now;
             dispatch_async(_statsQueue, ^{
                 [self getAudioStatsString];
@@ -376,8 +387,8 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
 
     CMTime currentPts = [_renderSynchronizer currentTime];
     if (CMTimeCompare(currentPts, _nextPts) == 1) {
-        DEBUG_TRACE(@"AVSB audio pts adjusted to currentTime %f (+%f)",
-                    CMTimeGetSeconds(currentPts), CMTimeGetSeconds(CMTimeSubtract(currentPts, _nextPts)));
+//        DEBUG_TRACE(@"AVSB audio pts adjusted to currentTime %f (+%f)",
+//                    CMTimeGetSeconds(currentPts), CMTimeGetSeconds(CMTimeSubtract(currentPts, _nextPts)));
         _nextPts = currentPts;
     }
 
@@ -408,7 +419,7 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
     _nextPts = CMTimeAdd(pts, duration);
 
     dispatch_async(_statsQueue, ^{
-        DEBUG_TRACE(@"AVSB audio pts %f, duration %f @ %f", CMTimeGetSeconds(pts), CMTimeGetSeconds(duration), CACurrentMediaTime());
+        //DEBUG_TRACE(@"AVSB audio pts %f, duration %f / raw pts %d", CMTimeGetSeconds(pts), CMTimeGetSeconds(duration), header.pts);
         self->_opusToEnqueueTime += (CACurrentMediaTime() - ((double)header.decodeStartTimeNanos / 1e9));
         self->_opusPackets++;
     });
@@ -619,10 +630,11 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
     TPCircularBufferTail(&_ringBuffer, &freeBytes);
     uint32_t pcmBytes = _ringBuffer.length - freeBytes;
     double pcmDuration = pcmBytes * 1.0 / (_channels * _sampleRateOpus * sizeof(float));
+    double avOffset = [[AVSBRenderer getAvSync] getAudioVideoSyncOffset];
 
-    NSString *out = [NSString stringWithFormat:@" / Audio: %dch Opus @ %.0f kbps\n Audio buffer: %.0f%% full (%.2f ms)",
+    NSString *out = [NSString stringWithFormat:@" / Audio: %dch Opus @ %.0f kbps\n Audio buffer: %.0f%% full (%.2f ms)\n A/V sync offset: %.2f ms",
                      _channels, bitrateAvg.getOutput(),
-                     (double)(pcmBytes * 100.0 / _ringBuffer.length), pcmDuration * 1000.0];
+                     (double)(pcmBytes * 100.0 / _ringBuffer.length), pcmDuration * 1000.0, avOffset];
 
     DEBUG_TRACE(@"buffer health: %.2f %% full, PCM bytes: %d (%.2f ms), free bytes: %d, bitrate: %.0f kbps, decode time: %f ms",
                 (double)(pcmBytes * 100.0 / _ringBuffer.length), pcmBytes, pcmDuration * 1000.0, freeBytes, bitrateAvg.getOutput(), decodeTimeAvg.getOutput());

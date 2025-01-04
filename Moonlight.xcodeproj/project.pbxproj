@@ -43,6 +43,8 @@
 		98D585701C0ED0E800F6CC00 /* TemporarySettings.m in Sources */ = {isa = PBXBuildFile; fileRef = 98D5856F1C0ED0E800F6CC00 /* TemporarySettings.m */; };
 		A103915A2D211EC8008362F3 /* AVSBRenderer.mm in Sources */ = {isa = PBXBuildFile; fileRef = A10391592D211EC7008362F3 /* AVSBRenderer.mm */; };
 		A103915B2D211EC9008362F3 /* AVSBRenderer.mm in Sources */ = {isa = PBXBuildFile; fileRef = A10391592D211EC7008362F3 /* AVSBRenderer.mm */; };
+		A117B9CD2D290C3600E4ADE8 /* AVSync.mm in Sources */ = {isa = PBXBuildFile; fileRef = A117B9CC2D290C2B00E4ADE8 /* AVSync.mm */; };
+		A117B9CE2D290C3600E4ADE8 /* AVSync.mm in Sources */ = {isa = PBXBuildFile; fileRef = A117B9CC2D290C2B00E4ADE8 /* AVSync.mm */; };
 		A15AFBDA2D1615B200848F45 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = A15AFBD82D1615B200848F45 /* TPCircularBuffer.c */; };
 		A15AFBDB2D1615B200848F45 /* OutputAU.mm in Sources */ = {isa = PBXBuildFile; fileRef = A15AFBD62D1615B200848F45 /* OutputAU.mm */; };
 		A15AFBDC2D1615B200848F45 /* AUSpatialMixer.mm in Sources */ = {isa = PBXBuildFile; fileRef = A15AFBD12D1615B200848F45 /* AUSpatialMixer.mm */; };
@@ -236,6 +238,8 @@
 		98D5856F1C0ED0E800F6CC00 /* TemporarySettings.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TemporarySettings.m; path = Database/TemporarySettings.m; sourceTree = "<group>"; };
 		A10391582D211EC0008362F3 /* AVSBRenderer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AVSBRenderer.h; sourceTree = "<group>"; };
 		A10391592D211EC7008362F3 /* AVSBRenderer.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AVSBRenderer.mm; sourceTree = "<group>"; };
+		A117B9CB2D29026A00E4ADE8 /* AVSync.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AVSync.h; sourceTree = "<group>"; };
+		A117B9CC2D290C2B00E4ADE8 /* AVSync.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AVSync.mm; sourceTree = "<group>"; };
 		A15AFBCF2D1615B200848F45 /* AllocatedAudioBufferList.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AllocatedAudioBufferList.h; sourceTree = "<group>"; };
 		A15AFBD02D1615B200848F45 /* AUSpatialMixer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AUSpatialMixer.h; sourceTree = "<group>"; };
 		A15AFBD12D1615B200848F45 /* AUSpatialMixer.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AUSpatialMixer.mm; sourceTree = "<group>"; };
@@ -441,6 +445,8 @@
 		A15AFBD92D1615B200848F45 /* Audio */ = {
 			isa = PBXGroup;
 			children = (
+				A117B9CC2D290C2B00E4ADE8 /* AVSync.mm */,
+				A117B9CB2D29026A00E4ADE8 /* AVSync.h */,
 				A10391592D211EC7008362F3 /* AVSBRenderer.mm */,
 				A10391582D211EC0008362F3 /* AVSBRenderer.h */,
 				A1D2C4212D1E8F7B0093BA7D /* AudioStats.cpp */,
@@ -930,6 +936,7 @@
 				FB1A681B213284FB00507771 /* ComputerScrollView.m in Sources */,
 				FB1A681C213284FB00507771 /* AppCollectionView.m in Sources */,
 				9865DC37213287FE0005B9B9 /* StreamFrameViewController.m in Sources */,
+				A117B9CD2D290C3600E4ADE8 /* AVSync.mm in Sources */,
 				9865DC38213287FE0005B9B9 /* LoadingFrameViewController.m in Sources */,
 				9865DC31213260F10005B9B9 /* mkcert.c in Sources */,
 				FB1A67E32132498A00507771 /* Limelight.xcdatamodeld in Sources */,
@@ -984,6 +991,7 @@
 				FB290D0719B2C406004C83CF /* Limelight.xcdatamodeld in Sources */,
 				9819CC22254F180F008A7C8E /* AbsoluteTouchHandler.m in Sources */,
 				9819CC14254F107A008A7C8E /* RelativeTouchHandler.m in Sources */,
+				A117B9CE2D290C3600E4ADE8 /* AVSync.mm in Sources */,
 				FB1A674D2131E65900507771 /* KeyboardSupport.m in Sources */,
 				FB89463219F646E200339C8A /* VideoDecoderRenderer.m in Sources */,
 				A1D2C4232D1E8F820093BA7D /* AudioStats.cpp in Sources */,

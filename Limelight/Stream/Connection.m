@@ -200,6 +200,9 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit)
         entry = entry->next;
     }
 
+    // keep track of the most recently submitted/rendered timestamp so we can track A/V sync
+    [[AVSBRenderer getAvSync] setVideoPts:decodeUnit->presentationTimeMs];
+
     // This function will take our picture data buffer
     return [renderer submitDecodeBuffer:data
                                  length:offset
@@ -488,6 +491,9 @@ void AVSBArDecodeWithTimestamp(char* sampleData, int sampleLength, uint32_t pts)
         AVSBArCleanup();
         AVSBArInit(-1, &opusConfig, NULL, -1); // XXX we don't use the other params but this is still gross
     }
+
+    // keep track of the most recently submitted/rendered timestamp so we can track A/V sync
+    [[AVSBRenderer getAvSync] setAudioPts:pts];
 }
 #endif
 

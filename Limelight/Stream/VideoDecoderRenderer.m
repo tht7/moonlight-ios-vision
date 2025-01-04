@@ -598,7 +598,7 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
     static int once = 0;
     if (++once % 1000) {
         CMTime pts = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer);
-        Log(LOG_I, @"video du->pts %d pts %f @ %f", du->presentationTimeMs, CMTimeGetSeconds(pts), CACurrentMediaTime());
+        Log(LOG_I, @"video du->pts %d pts %f / raw pts %d", du->presentationTimeMs, CMTimeGetSeconds(pts), du->presentationTimeMs);
     }
 
     // Enqueue the next frame
