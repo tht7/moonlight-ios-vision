@@ -157,17 +157,35 @@
         DEBUG_TRACE(@"AVSB setPreferredIOBufferDuration %f", _frameDuration);
     }
 
-    { // multichannel
-        NSError *error = nil;
-        NSInteger maxChannels = [session maximumOutputNumberOfChannels];
-        NSInteger prefChannels = MIN(maxChannels, _channels);
 
-        [session setPreferredOutputNumberOfChannels:prefChannels error:&error];
-        if (error != nil) {
-            Log(LOG_W, @"Warning: failed to setPreferredOutputNumberOfChannels to %d: %@", prefChannels, error.localizedDescription);
-            // probably ok to continue
+    // multichannel (non-spatial HDMI devices)
+    if (_channels > 2) {
+        bool isSpatialAudioEnabled = false;
+
+        for (AVAudioSessionPortDescription *output in session.currentRoute.outputs) {
+            if (@available(macOS 12.0, iOS 15.0, tvOS 15.0, *)) {
+                if ([output isSpatialAudioEnabled]) {
+                    isSpatialAudioEnabled = true;
+                    break;
+                }
+            }
+            if ([output.portType isEqualToString:AVAudioSessionPortHeadphones]) {
+                isSpatialAudioEnabled = true;
+                break;
+            }
         }
-        DEBUG_TRACE(@"setPreferredOutputNumberOfChannels:%d", (int)prefChannels);
+
+        if (!isSpatialAudioEnabled) {
+            NSError *error = nil;
+            NSInteger maxChannels = [session maximumOutputNumberOfChannels];
+            NSInteger prefChannels = MIN(maxChannels, _channels);
+            [session setPreferredOutputNumberOfChannels:prefChannels error:&error];
+            if (error != nil) {
+                Log(LOG_W, @"Warning: failed to setPreferredOutputNumberOfChannels to %d: %@", prefChannels, error.localizedDescription);
+                // probably ok to continue
+            }
+            DEBUG_TRACE(@"setPreferredOutputNumberOfChannels:%d", (int)prefChannels);
+        }
     }
 
     { // notifications
