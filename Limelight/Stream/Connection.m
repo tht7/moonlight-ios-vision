@@ -200,9 +200,6 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit)
         entry = entry->next;
     }
 
-    // keep track of the most recently submitted/rendered timestamp so we can track A/V sync
-    [[AVSBRenderer getAvSync] setVideoPts:decodeUnit->presentationTimeMs];
-
     // This function will take our picture data buffer
     return [renderer submitDecodeBuffer:data
                                  length:offset
@@ -443,7 +440,14 @@ static inline void addPCMHeader(PCMHeader *header, uint32_t pts) {
 void AVSBArDecodeWithTimestamp(char* sampleData, int sampleLength, uint32_t pts) {
     if (audioIsStopping)
         return;
-    
+
+    // drop data before decoding if we've got at least 30ms of backlog
+    int pendingAudio = LiGetPendingAudioDuration();
+    if (pendingAudio > 100) {
+        DEBUG_TRACE(@"AVSB skip-ahead, pending audio %d ms. Dropping %d Opus bytes @ %d", pendingAudio, sampleLength, pts);
+        return;
+    }
+
     // This getAudioBuffer works differently to the others, and only returns bytesFree in buffer
     int bytesFree = 0;
     char* buffer = [avsbRenderer getAudioBuffer:&bytesFree];
@@ -454,6 +458,8 @@ void AVSBArDecodeWithTimestamp(char* sampleData, int sampleLength, uint32_t pts)
         Log(LOG_E, @"not enough space in buffer for decoded audio: bytesFree %d, bytesNeeded %d",
             bytesFree, sizeof(PCMHeader) + bytesNeeded);
         return;
+
+        // XXX this should really block and wait for the buffer space
     }
 
     // encode the decodeStartTime and pts into a 16 byte "header" before the PCM
@@ -491,9 +497,6 @@ void AVSBArDecodeWithTimestamp(char* sampleData, int sampleLength, uint32_t pts)
         AVSBArCleanup();
         AVSBArInit(-1, &opusConfig, NULL, -1); // XXX we don't use the other params but this is still gross
     }
-
-    // keep track of the most recently submitted/rendered timestamp so we can track A/V sync
-    [[AVSBRenderer getAvSync] setAudioPts:pts];
 }
 #endif
 

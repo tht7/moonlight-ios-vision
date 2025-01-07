@@ -6,9 +6,12 @@
 
 @interface AVSync : NSObject
 
-- (void)setAudioPts:(uint32_t)pts;
++ (instancetype)sharedInstance;
+
 - (void)setVideoPts:(uint32_t)pts;
-- (double)getAudioVideoSyncOffset;
+- (void)setAudioPtsAndCurrentTime:(CMTime)pts currentTime:(CMTime)currentTime;
+- (double)getAVSyncOffsets:(double *)audioDelay;
+- (double)getAudioDelay;
 
 @end
 

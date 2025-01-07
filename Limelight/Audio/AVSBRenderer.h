@@ -16,7 +16,7 @@ typedef struct __attribute__((__packed__)) {
 
 @interface AVSBRenderer : NSObject
 
-+ (AVSync *)getAvSync;
++ (AVSampleBufferRenderSynchronizer *)getRenderSynchronizer;
 
 - (instancetype)initWithConfig:(const OPUS_MULTISTREAM_CONFIGURATION*)opusConfig;
 - (void)start;

@@ -8,6 +8,8 @@
 
 #import "VideoDecoderRenderer.h"
 #import "StreamView.h"
+#import "AVSBRenderer.h"
+#import "AVSync.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavcodec/cbs.h>
@@ -35,8 +37,6 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     
     CADisplayLink* _displayLink;
     BOOL framePacing;
-
-    CFTimeInterval decodeStart;
 }
 
 - (void)reinitializeDisplayLayer
@@ -64,6 +64,10 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     // Hide the layer until we get an IDR frame. This ensures we
     // can see the loading progress label as the stream is starting.
     displayLayer.hidden = YES;
+
+    // XXX Not sure if this does anything, due to the way we display frames
+    AVSampleBufferRenderSynchronizer *renderSynchronizer = [AVSBRenderer getRenderSynchronizer];
+    [renderSynchronizer addRenderer:displayLayer];
 
     if (oldLayer != nil) {
         // Switch out the old display layer with the new one
@@ -595,14 +599,10 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
         return DR_NEED_IDR;
     }
 
-    static int once = 0;
-    if (++once % 1000) {
-        CMTime pts = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer);
-        Log(LOG_I, @"video du->pts %d pts %f / raw pts %d", du->presentationTimeMs, CMTimeGetSeconds(pts), du->presentationTimeMs);
-    }
+    // keep track of the most recently submitted/rendered timestamp so we can track A/V sync
+    [[AVSync sharedInstance] setVideoPts:du->presentationTimeMs];
 
     // Enqueue the next frame
-    self->decodeStart = CACurrentMediaTime();
     [self->displayLayer enqueueSampleBuffer:sampleBuffer];
     
     if (du->frameType == FRAME_TYPE_IDR) {

@@ -13,12 +13,14 @@
 #include <string.h>
 #include <Limelight.h>
 
-#define BUFFER_DURATION_MS 30
+#define BUFFER_DURATION_MS 50
 
 @interface AVSBRenderer ()
 - (void)feedAudio;
 - (bool)queueNextSampleBuffer:(CMTime *)outTimestamp;
 @end
+
+static AVSampleBufferRenderSynchronizer *renderSynchronizerInstance;
 
 @implementation AVSBRenderer
 {
@@ -33,16 +35,26 @@
     AVAudioFormat *_format;
     CMAudioFormatDescriptionRef _formatDescription;
 
-    const OPUS_MULTISTREAM_CONFIGURATION *_inOpusConfig;
-    int _samplesPerFrame;
-    int _channels;
-    double _sampleRateOpus;
-    double _sampleRateHW;
-    double _frameDuration;
-    double _bufferDuration;
     bool _needsReinit;
     uint32_t _firstPts;       // value of first pts packet we receive, used to offset future packets
     CMTime _nextPts;
+
+    // opus metadata
+    struct {
+        int samplesPerFrame;
+        int channels;
+        double sampleRate;
+        double frameDuration;
+    } _opus;
+
+    // hardware metadata
+    struct {
+        double sampleRate;
+        int outputChannels;
+        CFTimeInterval outputLatency;
+        CFTimeInterval bufferDuration;
+        CFStringRef deviceName;
+    } _hw;
 
     // stats
     dispatch_queue_t _statsQueue;
@@ -51,35 +63,32 @@
     double _opusToEnqueueTime; // average time from receiving an opus packet to enqueueing its PCM with AVSampleBuffer.
 }
 
-static AVSync* avSync;
-
-+(AVSync *)getAvSync
++(AVSampleBufferRenderSynchronizer *)getRenderSynchronizer
 {
-    if (!avSync) {
-        avSync = [[AVSync alloc] init];
+    if (!renderSynchronizerInstance) {
+        renderSynchronizerInstance = [[AVSampleBufferRenderSynchronizer alloc] init];
     }
-    return avSync;
+    return renderSynchronizerInstance;
 }
 
 -(instancetype)initWithConfig:(const OPUS_MULTISTREAM_CONFIGURATION *)inOpusConfig
 {
     self = [super init];
 
-    _inOpusConfig    = inOpusConfig;
-    _samplesPerFrame = inOpusConfig->samplesPerFrame;
-    _channels        = inOpusConfig->channelCount;
-    _sampleRateOpus  = 48000.0;
-    _frameDuration   = (_samplesPerFrame / (_sampleRateOpus / 1000.0)) / 1000.0;
-    _needsQOS        = true;
+    _opus.samplesPerFrame = inOpusConfig->samplesPerFrame;
+    _opus.channels        = inOpusConfig->channelCount;
+    _opus.sampleRate      = 48000.0;
+    _opus.frameDuration   = (_opus.samplesPerFrame / (_opus.sampleRate / 1000.0)) / 1000.0;
+    _needsQOS             = true;
 
     AudioChannelLayoutTag layoutTag
-        = _channels == 6 ? kAudioChannelLayoutTag_WAVE_5_1_B
-        : _channels == 8 ? kAudioChannelLayoutTag_WAVE_7_1
-        :                  kAudioChannelLayoutTag_Stereo;
+        = _opus.channels == 6 ? kAudioChannelLayoutTag_WAVE_5_1_B
+        : _opus.channels == 8 ? kAudioChannelLayoutTag_WAVE_7_1
+        :                       kAudioChannelLayoutTag_Stereo;
     _channelLayout = [[AVAudioChannelLayout alloc] initWithLayoutTag:layoutTag];
 
     _format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
-                                               sampleRate:_sampleRateOpus
+                                               sampleRate:_opus.sampleRate
                                               interleaved:YES
                                             channelLayout:_channelLayout];
 
@@ -96,9 +105,9 @@ static AVSync* avSync;
     DEBUG_TRACE(@"formatDescription %@", _formatDescription);
 
     // init ring buffer, entries = 10 when duration = 50ms and packet size 5ms
-    int bufferEntries = BUFFER_DURATION_MS / (_frameDuration * 1000);
+    int bufferEntries = BUFFER_DURATION_MS / (_opus.frameDuration * 1000);
 
-    int ringBufferSize = bufferEntries * (sizeof(PCMHeader) + _channels * _samplesPerFrame * 4);
+    int ringBufferSize = bufferEntries * (sizeof(PCMHeader) + _opus.channels * _opus.samplesPerFrame * 4);
     bool ok = TPCircularBufferInit(&_ringBuffer, ringBufferSize);
     if (!ok) {
         CA_LogError(-1, "TPCircularBufferInit failed");
@@ -108,11 +117,16 @@ static AVSync* avSync;
 
     // init AVSB
     _audioRenderer      = [[AVSampleBufferAudioRenderer alloc] init];
-    _renderSynchronizer = [[AVSampleBufferRenderSynchronizer alloc] init];
+    //_renderSynchronizer = [[AVSampleBufferRenderSynchronizer alloc] init];
+    _renderSynchronizer = [AVSBRenderer getRenderSynchronizer];
 
     if (_audioRenderer == nil || _renderSynchronizer == nil) {
         CA_LogError(-1, "Could not init AVSampleBufferAudioRenderer");
         return nil;
+    }
+
+    if (@available(macOS 12.0, iOS 14.5, tvOS 14.5, *)) {
+        _renderSynchronizer.delaysRateChangeUntilHasSufficientMediaData = NO;
     }
 
     // init high-priority queue used by our feedAudio method
@@ -135,12 +149,12 @@ static AVSync* avSync;
     AVAudioSession* session = [AVAudioSession sharedInstance];
 
     { // samplerate
-        [session setPreferredSampleRate:_sampleRateOpus error:&error];
+        [session setPreferredSampleRate:_opus.sampleRate error:&error];
         if (error != nil) {
-            CA_LogError(-1, "AVSB failed to set preferred samplerate to %.0f: %@", _sampleRateOpus, error.localizedDescription);
+            CA_LogError(-1, "AVSB failed to set preferred samplerate to %.0f: %@", _opus.sampleRate, error.localizedDescription);
             // maybe ok?
         }
-        DEBUG_TRACE(@"AVSB setPreferredSampleRate %f", _sampleRateOpus);
+        DEBUG_TRACE(@"AVSB setPreferredSampleRate %f", _opus.sampleRate);
     }
 
     {   // session category & mode
@@ -159,19 +173,30 @@ static AVSync* avSync;
     }
 
     { // set buffer to match the packet size (5 or 10 ms)
-        [session setPreferredIOBufferDuration:_frameDuration
+        [session setPreferredIOBufferDuration:_opus.frameDuration
                                         error:&error];
         if (error != nil) {
-            CA_LogError(-1, "AVSB failed to setPreferredIOBufferDuration to %f: %@", _frameDuration, error.localizedDescription);
+            CA_LogError(-1, "AVSB failed to setPreferredIOBufferDuration to %f: %@", _opus.frameDuration, error.localizedDescription);
             return nil;
         }
-        DEBUG_TRACE(@"AVSB setPreferredIOBufferDuration %f", _frameDuration);
+        DEBUG_TRACE(@"AVSB setPreferredIOBufferDuration %f", _opus.frameDuration);
     }
 
-
     // multichannel (non-spatial HDMI devices)
-    if (_channels > 2) {
+    if (_opus.channels > 2) {
         bool isSpatialAudioEnabled = false;
+
+        if (@available(iOS 15.0, tvOS 15.0, *)) {
+            // not sure what this does...
+            [session setSupportsMultichannelContent:YES error:&error];
+            if (error != nil) {
+                Log(LOG_W, @"Warning: failed to setSupportsMultichannelContent:YES: %@", error.localizedDescription);
+                // probably ok to continue
+            }
+            else {
+                DEBUG_TRACE(@"AVSB setSupportsMultichannelContent:YES");
+            }
+        }
 
         for (AVAudioSessionPortDescription *output in session.currentRoute.outputs) {
             if (@available(macOS 12.0, iOS 15.0, tvOS 15.0, *)) {
@@ -189,7 +214,7 @@ static AVSync* avSync;
         if (!isSpatialAudioEnabled) {
             NSError *error = nil;
             NSInteger maxChannels = [session maximumOutputNumberOfChannels];
-            NSInteger prefChannels = MIN(maxChannels, _channels);
+            NSInteger prefChannels = MIN(maxChannels, _opus.channels);
             [session setPreferredOutputNumberOfChannels:prefChannels error:&error];
             if (error != nil) {
                 Log(LOG_W, @"Warning: failed to setPreferredOutputNumberOfChannels to %d: %@", prefChannels, error.localizedDescription);
@@ -248,18 +273,29 @@ static AVSync* avSync;
     NSError *error = nil;
     AVAudioSession* session = [AVAudioSession sharedInstance];
 
-    //[session setActive:YES withOptions:AVAudioSessionRouteSharingPolicyLongFormAudio error:&error];
-    [session setActive:YES error:&error];
+    [session setActive:YES withOptions:AVAudioSessionRouteSharingPolicyLongFormAudio error:&error];
+    //[session setActive:YES error:&error];
     if (error != nil) {
         CA_LogError(-1, "AVSB failed to setActive:YES: %@", error.localizedDescription);
         return;
     }
     DEBUG_TRACE(@"AVSB start, setActive:YES");
+    
 
     // refresh the items we changed
-    _sampleRateHW   = [session sampleRate];
-    _bufferDuration = [session IOBufferDuration];
-    DEBUG_TRACE(@"AVSB running at sampleRate %.2f with IOBufferDuration %f", _sampleRateHW, _bufferDuration);
+    _hw.sampleRate     = [session sampleRate];
+    _hw.bufferDuration = [session IOBufferDuration];
+    _hw.outputChannels = (int)[session outputNumberOfChannels];
+    _hw.outputLatency  = [session outputLatency];
+
+    if (_hw.deviceName)
+        CFRelease(_hw.deviceName);
+    _hw.deviceName = CFStringCreateCopy(kCFAllocatorDefault, (__bridge CFStringRef)session.currentRoute.outputs.firstObject.portName);
+
+    DEBUG_TRACE(@"AVSB %@ running at sampleRate %.2f %d-channel, with IOBufferDuration %f, latency %f",
+                _hw.deviceName, _hw.sampleRate, _hw.outputChannels, _hw.bufferDuration, _hw.outputLatency);
+
+
 
     // Reset our stats to 0
     [self resetStats];
@@ -296,7 +332,7 @@ static AVSync* avSync;
 //            });
 
             if ([_renderSynchronizer rate] != 1.0) {
-                [_renderSynchronizer setRate:1.0 time:kCMTimeZero];
+                [_renderSynchronizer setRate:1.0 time:playTime];
             }
         }
 
@@ -321,22 +357,12 @@ static AVSync* avSync;
     }
 }
 
-// handy functions from mpv
-static int64_t CMTimeGetNanoseconds(CMTime time) {
-    time = CMTimeConvertScale(time, 1000000000, kCMTimeRoundingMethod_Default);
-    return time.value;
-}
-
-static CMTime CMTimeFromNanoseconds(int64_t time) {
-    return CMTimeMake(time, 1000000000);
-}
-
 -(bool)queueNextSampleBuffer:(CMTime*)outTimestamp {
     OSStatus status = noErr;
     CMBlockBufferRef blockBuffer = NULL;
     CMSampleBufferRef sampleBuffer = NULL;
-    int inNumberFrames = int(_sampleRateOpus * _frameDuration);
-    int wantedBytes = sizeof(PCMHeader) + (inNumberFrames * _channels * 4);
+    int inNumberFrames = int(_opus.sampleRate * _opus.frameDuration);
+    int wantedBytes = sizeof(PCMHeader) + (inNumberFrames * _opus.channels * 4);
 
     // Pull audio from ring buffer
     uint32_t availableBytes;
@@ -385,19 +411,27 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
         _firstPts = header.pts;
     }
 
-    CMTime currentPts = [_renderSynchronizer currentTime];
-    if (CMTimeCompare(currentPts, _nextPts) == 1) {
-//        DEBUG_TRACE(@"AVSB audio pts adjusted to currentTime %f (+%f)",
-//                    CMTimeGetSeconds(currentPts), CMTimeGetSeconds(CMTimeSubtract(currentPts, _nextPts)));
-        _nextPts = currentPts;
+    // to determine when the next packet should be played we have several choices:
+    // _nextPts: the value we calculated after the last frame, using pts + duration
+    // streamPts: the incoming stream's timestamp data, it should be the most accurate
+    // currentPts: the time used by the synchronizer. We aren't yet using this as intended (by letting it manage the video playback)
+    //CMTime currentPts = [_renderSynchronizer currentTime];
+    CMTime streamPts  = CMTimeMake(header.pts, 1000);
+//    DEBUG_TRACE(@"AVSB comparing _nextPts %f, currentPts %f, streamPts %f",
+//                CMTimeGetSeconds(_nextPts), CMTimeGetSeconds(currentPts), CMTimeGetSeconds(streamPts));
+
+    if (CMTimeCompare(streamPts, _nextPts) == 1) {
+        DEBUG_TRACE(@"AVSB audio pts adjusted to streamPts %f (+%f)",
+                    CMTimeGetSeconds(streamPts), CMTimeGetSeconds(CMTimeSubtract(streamPts, _nextPts)));
+        _nextPts = streamPts;
     }
 
     CMSampleTimingInfo sampleTimingInfo[] = {(CMSampleTimingInfo) {
-        .duration              = CMTimeMake(1, _sampleRateOpus),
+        .duration              = CMTimeMake(1, _opus.sampleRate),
         .presentationTimeStamp = _nextPts,
         .decodeTimeStamp       = kCMTimeInvalid
     }};
-    size_t sampleSizeArray[] = {(size_t)_channels * 4};
+    size_t sampleSizeArray[] = {(size_t)_opus.channels * 4};
     status = CMSampleBufferCreateReady(kCFAllocatorDefault,
                                        blockBuffer,
                                        _formatDescription,
@@ -419,10 +453,13 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
     _nextPts = CMTimeAdd(pts, duration);
 
     dispatch_async(_statsQueue, ^{
-        //DEBUG_TRACE(@"AVSB audio pts %f, duration %f / raw pts %d", CMTimeGetSeconds(pts), CMTimeGetSeconds(duration), header.pts);
+//        DEBUG_TRACE(@"AVSB audio pts %f, duration %f / raw pts %d",
+//                    CMTimeGetSeconds(pts), CMTimeGetSeconds(duration), header.pts);
         self->_opusToEnqueueTime += (CACurrentMediaTime() - ((double)header.decodeStartTimeNanos / 1e9));
         self->_opusPackets++;
     });
+
+    [[AVSync sharedInstance] setAudioPtsAndCurrentTime:pts currentTime:[_renderSynchronizer currentTime]];
 
     [_audioRenderer enqueueSampleBuffer:sampleBuffer];
 
@@ -447,6 +484,9 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
         TPCircularBufferClear(&_ringBuffer);
 
         _firstPts = 0;
+
+        if (_hw.deviceName)
+            CFRelease(_hw.deviceName);
 
         NSError *error = nil;
         [[AVAudioSession sharedInstance] setActive:NO error:&error];
@@ -559,9 +599,9 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
 
 -(void)handleFlushedNotification:(NSNotification *)notification
 {
-    DEBUG_TRACE(@"AVSB AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification, name: %@", notification.name);
-
-    // XXX
+    NSValue *flushTime = [notification.userInfo objectForKey:AVSampleBufferAudioRendererFlushTimeKey];
+    double time = CMTimeGetSeconds(flushTime.CMTimeValue);
+    Log(LOG_I, @"AVSB renderer flush: at %f, time %f", time, CMTimeGetSeconds(_renderSynchronizer.currentTime));
 }
 
 -(void)handleRenderingCapabilitiesChange:(NSNotification *)notification
@@ -607,7 +647,7 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
 // update rate is based on how often we're called
 -(NSString *)getAudioStatsString
 {
-    static EWMA bitrateAvg(0.2);
+    static EWMA bitrateAvg(0.9);
     static EWMA decodeTimeAvg(0.2);
     static CFTimeInterval lastTick = CACurrentMediaTime();
     CFTimeInterval now = CACurrentMediaTime();
@@ -629,15 +669,18 @@ static CMTime CMTimeFromNanoseconds(int64_t time) {
     uint32_t freeBytes = 0;
     TPCircularBufferTail(&_ringBuffer, &freeBytes);
     uint32_t pcmBytes = _ringBuffer.length - freeBytes;
-    double pcmDuration = pcmBytes * 1.0 / (_channels * _sampleRateOpus * sizeof(float));
-    double avOffset = [[AVSBRenderer getAvSync] getAudioVideoSyncOffset];
+    double pcmDuration = pcmBytes * 1.0 / (_opus.channels * _opus.sampleRate * sizeof(float));
 
-    NSString *out = [NSString stringWithFormat:@" / Audio: %dch Opus @ %.0f kbps\n Audio buffer: %.0f%% full (%.2f ms)\n A/V sync offset: %.2f ms",
-                     _channels, bitrateAvg.getOutput(),
-                     (double)(pcmBytes * 100.0 / _ringBuffer.length), pcmDuration * 1000.0, avOffset];
+    double audioDelay;
+    double avOffset = [[AVSync sharedInstance] getAVSyncOffsets:&audioDelay];
 
-    DEBUG_TRACE(@"buffer health: %.2f %% full, PCM bytes: %d (%.2f ms), free bytes: %d, bitrate: %.0f kbps, decode time: %f ms",
-                (double)(pcmBytes * 100.0 / _ringBuffer.length), pcmBytes, pcmDuration * 1000.0, freeBytes, bitrateAvg.getOutput(), decodeTimeAvg.getOutput());
+    NSString *out = [NSString stringWithFormat:@" / Audio: %dch Opus @ %.0f kbps\n / Audio buffer: %.0f%% full (%.2f ms)\n / Audio buffer delay %.2f ms\n / %@ latency: %.2f ms",
+                     _opus.channels, bitrateAvg.getOutput(),
+                     (double)(pcmBytes * 100.0 / _ringBuffer.length), pcmDuration * 1000.0, audioDelay, _hw.deviceName, _hw.outputLatency * 1000.0];
+
+    DEBUG_TRACE(@"buffer %.2f %% full, PCM bytes %d (%.2f ms), free %d, bitrate %.0f kbps, avOffset %f, audioDelay %f, latency %f",
+                (double)(pcmBytes * 100.0 / _ringBuffer.length), pcmBytes, pcmDuration * 1000.0, freeBytes, bitrateAvg.getOutput(),
+                avOffset, audioDelay, _hw.outputLatency);
 
     return out;
 }
