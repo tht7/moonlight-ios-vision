@@ -54,7 +54,7 @@ public class TemporarySettings: NSObject {
         self.width = settings.width?.int32Value ?? 0
         self.audioConfig = settings.audioConfig?.int32Value ?? 0
         self.preferredCodec = PreferredCodec(rawValue: Int(settings.preferredCodec)) ?? PreferredCodec.auto
-        self.onscreenControls = OnScreenControlsLevel(rawValue: settings.onscreenControls?.intValue ?? 0) ?? OnScreenControlsLevel.auto
+        self.onscreenControls = OnScreenControlsLevel(rawValue: settings.onscreenControls?.intValue ?? 0) ?? OnScreenControlsLevel.off
         self.uniqueId = settings.uniqueId ?? ""
 
         self.useFramePacing = settings.useFramePacing
