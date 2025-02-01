@@ -355,7 +355,6 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         // Instead of displayLayer.enqueueSampleBuffer(...),
         // we do our own custom rendering:
         VTDecompressionSessionDecodeFrame(self.session!, sampleBuffer: sampleBuffer, flags: [._EnableAsynchronousDecompression], frameRefcon: nil, infoFlagsOut: nil)
-//        renderSampleBufferToDrawable(sampleBuffer)
 
         // If it’s an IDR, notify that video content is visible
         if du.pointee.frameType == FRAME_TYPE_IDR {
@@ -400,10 +399,8 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         var paramSizes: [Int] = []
 
         for ps in parameterSetBuffers {
-            ps.withUnsafeBytes { (rawPtr: UnsafeRawBufferPointer) in
-                paramPtrs.append(rawPtr.baseAddress!.assumingMemoryBound(to: UInt8.self))
-                paramSizes.append(ps.count)
-            }
+            paramPtrs.append(ps.withUnsafeBytes { (bytePtr: UnsafePointer<UInt8>) in bytePtr })
+            paramSizes.append(ps.count)
         }
 
         var formatDesc: CMVideoFormatDescription?
@@ -736,33 +733,12 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         guard var imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
-        print("NOW DRAWING")
         let drawable = try! self.drawableQueue!.nextDrawable()
-        
-        
-//        let isPlanar = CVPixelBufferIsPlanar(imageBuffer)
-//            let width = isPlanar ? CVPixelBufferGetWidthOfPlane(imageBuffer, 0) : CVPixelBufferGetWidth(imageBuffer)
-//            let height = isPlanar ? CVPixelBufferGetHeightOfPlane(imageBuffer, 0) : CVPixelBufferGetHeight(imageBuffer)
-//
-//            var cvMetalTexture: CVMetalTexture?
-//            CVMetalTextureCacheCreateTextureFromImage(nil, _textureCache!, imageBuffer, nil, pixelFormat, width, height, 0, &cvMetalTexture)
-//
-//        guard let cvMetalTextureUnbound = cvMetalTexture else {
-//                throw MyError.normal
-//            }
-//        let metalTexture = CVMetalTextureGetTexture(cvMetalTextureUnbound)!
-//        
         drawable.texture.replace(region: .init(), mipmapLevel: 0, withBytes: &imageBuffer, bytesPerRow: CVPixelBufferGetBytesPerRow(imageBuffer))
         
         
     
         drawable.present()
-        // Then do something like:
-        // let pixelBuffer = imageBuffer as CVPixelBuffer
-        // Convert pixelBuffer -> MTLTexture, etc.
-        // drawableQueue.enqueue(texture)
-        // ...
-        // For now, just log it
         print("Render sample buffer to custom drawable pipeline")
     }
 
