@@ -402,6 +402,20 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             paramPtrs.append(ps.withUnsafeBytes { (bytePtr: UnsafePointer<UInt8>) in bytePtr })
             paramSizes.append(ps.count)
         }
+        
+        print("parameterSetBuffers count: \(parameterSetBuffers.count)")
+        for (index, ps) in parameterSetBuffers.enumerated() {
+            print("Parameter Set \(index):")
+            print(" Data (hex): \(ps.map { String(format: "%02x", $0) }.joined())")
+            print(" Size: \(ps.count)")
+            if paramPtrs.count > index {
+                print(" Pointer: \(paramPtrs[index])")
+            }
+        }
+        print("parameterSetCount: \(parameterSetCount)")
+        print("paramPtrs count: \(paramPtrs.count)")
+        print("paramSizes: \(paramSizes)")
+        print("nalUnitHeaderLength: \(NAL_LENGTH_PREFIX_SIZE)")
 
         var formatDesc: CMVideoFormatDescription?
         let status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
