@@ -769,45 +769,33 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
     // MARK: - HDR Mode
 
     func setHdrMode(_ enabled: Bool) {
-        var hdrMetadata = SS_HDR_METADATA()
-        let hasMetadata = enabled && LiGetHdrMetadata(&hdrMetadata)
         var metadataChanged = false
-
+        
         // Mastering display color volume check
-        if hasMetadata && hdrMetadata.displayPrimaries.0.x != 0 && hdrMetadata.maxDisplayLuminance != 0 {
-            // Build the data the same way as the Objective-C code
-            // ...
-            // Compare to `masteringDisplayColorVolume`; if changed, update and set `metadataChanged = true`
+        let displayMetadata = HDRParsingUtils.parseHDRDisplayMetadata(enabled)
+        
+        if let displayMetadata = displayMetadata,
+           masteringDisplayColorVolume == nil ||
+            masteringDisplayColorVolume != displayMetadata {
+            masteringDisplayColorVolume = displayMetadata
+            metadataChanged = true
         } else if masteringDisplayColorVolume != nil {
             masteringDisplayColorVolume = nil
             metadataChanged = true
         }
-
+        
         // Content light level info check
-        if hasMetadata && hdrMetadata.maxContentLightLevel != 0 && hdrMetadata.maxFrameAverageLightLevel != 0 {
-            // Build `cll` structure, compare to `contentLightLevelInfo`
-            // TODO
-            /*
-             struct {
-                 uint16_t max_content_light_level;
-                 uint16_t max_frame_average_light_level;
-             } __attribute__((packed, aligned(2))) cll;
-
-             cll.max_content_light_level = __builtin_bswap16(hdrMetadata.maxContentLightLevel);
-             cll.max_frame_average_light_level = __builtin_bswap16(hdrMetadata.maxFrameAverageLightLevel);
-
-             NSData* newCll = [NSData dataWithBytes:&cll length:sizeof(cll)];
-             if (contentLightLevelInfo == nil || ![newCll isEqualToData:contentLightLevelInfo]) {
-                 contentLightLevelInfo = newCll;
-                 metadataChanged = YES;
-             }
-             */
-            // ...
-        } else if contentLightLevelInfo != nil {
-            contentLightLevelInfo = nil
-            metadataChanged = true
-        }
-
+        let lightMetadata = HDRParsingUtils.parseHDRLightMetadata(enabled)
+        if let lightMetadata = lightMetadata,
+           contentLightLevelInfo == nil ||
+            contentLightLevelInfo != lightMetadata {
+                contentLightLevelInfo = lightMetadata
+                metadataChanged = true
+            } else if contentLightLevelInfo != nil {
+                contentLightLevelInfo = nil
+                metadataChanged = true
+            }
+        
         if metadataChanged {
             LiRequestIdrFrame()
         }

@@ -26,8 +26,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>GCRequiresControllerUserInteraction</key>
 	<dict>
-	<key>visionOS</key>
-	<true/>
+		<key>visionOS</key>
+		<true/>
 	</dict>
 	<key>GCSupportedGameControllers</key>
 	<array>

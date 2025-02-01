@@ -42,6 +42,9 @@
 		98B9CE6D27B2144B00B473C4 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 98B9CE6C27B2144B00B473C4 /* AVKit.framework */; };
 		98CFB82F1CAD481B0048EF74 /* libmoonlight-common.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 98AB2E841CAD46840089BB98 /* libmoonlight-common.a */; };
 		98D585701C0ED0E800F6CC00 /* TemporarySettings.m in Sources */ = {isa = PBXBuildFile; fileRef = 98D5856F1C0ED0E800F6CC00 /* TemporarySettings.m */; };
+		B1AC7CEF2D4E011B0013B9A3 /* HDRParsingUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = B1AC7CEE2D4E011A0013B9A3 /* HDRParsingUtils.m */; };
+		B1AC7CF02D4E011B0013B9A3 /* HDRParsingUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = B1AC7CEE2D4E011A0013B9A3 /* HDRParsingUtils.m */; };
+		B1AC7CF12D4E011B0013B9A3 /* HDRParsingUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = B1AC7CEE2D4E011A0013B9A3 /* HDRParsingUtils.m */; };
 		B1EDB1352D4D95A700EB1839 /* StreamControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB1332D4D95A700EB1839 /* StreamControls.swift */; };
 		B1EDB1362D4D95A700EB1839 /* DrawableVideoDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB1302D4D95A700EB1839 /* DrawableVideoDecoder.swift */; };
 		B1EDB1372D4D95A700EB1839 /* UIKitStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB1342D4D95A700EB1839 /* UIKitStreamView.swift */; };
@@ -309,6 +312,8 @@
 		98B9CE6C27B2144B00B473C4 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS15.2.sdk/System/Library/Frameworks/AVKit.framework; sourceTree = DEVELOPER_DIR; };
 		98D5856E1C0ED0E800F6CC00 /* TemporarySettings.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TemporarySettings.h; path = Database/TemporarySettings.h; sourceTree = "<group>"; };
 		98D5856F1C0ED0E800F6CC00 /* TemporarySettings.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TemporarySettings.m; path = Database/TemporarySettings.m; sourceTree = "<group>"; };
+		B1AC7CED2D4E00980013B9A3 /* HDRParsingUtils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HDRParsingUtils.h; sourceTree = "<group>"; };
+		B1AC7CEE2D4E011A0013B9A3 /* HDRParsingUtils.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HDRParsingUtils.m; sourceTree = "<group>"; };
 		B1EDB1302D4D95A700EB1839 /* DrawableVideoDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawableVideoDecoder.swift; sourceTree = "<group>"; };
 		B1EDB1312D4D95A700EB1839 /* ObservableConnectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObservableConnectionManager.swift; sourceTree = "<group>"; };
 		B1EDB1322D4D95A700EB1839 /* RealityKitStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealityKitStreamView.swift; sourceTree = "<group>"; };
@@ -807,6 +812,8 @@
 		FB89461519F646E200339C8A /* Stream */ = {
 			isa = PBXGroup;
 			children = (
+				B1AC7CEE2D4E011A0013B9A3 /* HDRParsingUtils.m */,
+				B1AC7CED2D4E00980013B9A3 /* HDRParsingUtils.h */,
 				B1EDB13A2D4D95BF00EB1839 /* AnyVideoDecoderRenderer.h */,
 				B1EDB13B2D4D95BF00EB1839 /* StreamConfiguration.swift */,
 				FB89461619F646E200339C8A /* Connection.h */,
@@ -1276,6 +1283,7 @@
 				F71801442B654D9100A9336B /* TemporaryApp.swift in Sources */,
 				F7A1192D2B5DDF73001E8686 /* CryptoManager.m in Sources */,
 				F7A1192E2B5DDF73001E8686 /* ConnectionHelper.m in Sources */,
+				B1AC7CF12D4E011B0013B9A3 /* HDRParsingUtils.m in Sources */,
 				F7A1192F2B5DDF73001E8686 /* PairManager.m in Sources */,
 				F7A119302B5DDF73001E8686 /* HttpRequest.m in Sources */,
 				F7A119312B5DDF73001E8686 /* OnScreenControls.m in Sources */,
@@ -1317,6 +1325,7 @@
 				FB1A67D52132460400507771 /* ControllerSupport.m in Sources */,
 				FB1A67D82132460400507771 /* StreamView.m in Sources */,
 				9896219A23D56E8100211983 /* X1Kit.swift in Sources */,
+				B1AC7CEF2D4E011B0013B9A3 /* HDRParsingUtils.m in Sources */,
 				FB1A67DA2132460400507771 /* OnScreenControls.m in Sources */,
 				FB1A67DC2132460400507771 /* KeyboardSupport.m in Sources */,
 				FB1A67CD213245F800507771 /* DataManager.m in Sources */,
@@ -1381,6 +1390,7 @@
 				FB89462B19F646E200339C8A /* StreamView.m in Sources */,
 				F71801452B65583700A9336B /* TemporaryApp.swift in Sources */,
 				FB4678FA1A55FFAD00377732 /* DiscoveryManager.m in Sources */,
+				B1AC7CF02D4E011B0013B9A3 /* HDRParsingUtils.m in Sources */,
 				F7A4A4D82B61E6FD001591F3 /* TemporaryHost.swift in Sources */,
 				FB89463519F646E200339C8A /* MainFrameViewController.m in Sources */,
 				FBD1C8E21A8AD71400C6703C /* Logger.m in Sources */,

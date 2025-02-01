@@ -21,6 +21,7 @@
 #import "StreamManager.h"
 #import "ConnectionCallbacks.h"
 #import "Limelight.h"
+#import "HDRParsingUtils.h"
 
 #import "MoonlightApp+CoreDataClass.h"
 #import "MoonlightHost+CoreDataClass.h"

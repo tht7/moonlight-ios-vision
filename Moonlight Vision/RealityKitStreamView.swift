@@ -8,7 +8,6 @@
 
 import SwiftUI
 import RealityKit
-import RealityBounds
 import GameController
 
 let COOL_NUMBER: Float = 2.79945612 // 3.8
