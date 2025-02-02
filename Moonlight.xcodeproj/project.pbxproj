@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3E86FC1D2D4FFDF20016BB8E /* UpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E86FC1C2D4FFDED0016BB8E /* UpdatesView.swift */; };
 		3E9440F62D4EB9ED0047E0C2 /* OpenSSL in Frameworks */ = {isa = PBXBuildFile; productRef = 3E9440F52D4EB9ED0047E0C2 /* OpenSSL */; };
 		693B3A9B218638CD00982F7B /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 693B3A9A218638CD00982F7B /* Settings.bundle */; };
 		98181BE92791277400E43572 /* libSDL2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 98181BE82791275D00E43572 /* libSDL2.a */; };
@@ -273,6 +274,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		3E86FC1C2D4FFDED0016BB8E /* UpdatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesView.swift; sourceTree = "<group>"; };
 		566E9D2B2770B23A00EF7BFE /* Moonlight v1.7.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "Moonlight v1.7.xcdatamodel"; sourceTree = "<group>"; };
 		693B3A9A218638CD00982F7B /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		9803CCAB254F9EAF00EE185E /* ConnectionCallbacks.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ConnectionCallbacks.h; sourceTree = "<group>"; };
@@ -633,6 +635,7 @@
 		F7A119592B5DE1AB001E8686 /* Moonlight Vision */ = {
 			isa = PBXGroup;
 			children = (
+				3E86FC1C2D4FFDED0016BB8E /* UpdatesView.swift */,
 				B1EDB1302D4D95A700EB1839 /* DrawableVideoDecoder.swift */,
 				B1EDB1312D4D95A700EB1839 /* ObservableConnectionManager.swift */,
 				B1EDB1322D4D95A700EB1839 /* RealityKitStreamView.swift */,
@@ -1260,6 +1263,7 @@
 				F7A119172B5DDF73001E8686 /* WakeOnLanManager.m in Sources */,
 				B1EDB1352D4D95A700EB1839 /* StreamControls.swift in Sources */,
 				B1EDB1362D4D95A700EB1839 /* DrawableVideoDecoder.swift in Sources */,
+				3E86FC1D2D4FFDF20016BB8E /* UpdatesView.swift in Sources */,
 				B1EDB1372D4D95A700EB1839 /* UIKitStreamView.swift in Sources */,
 				B1EDB1382D4D95A700EB1839 /* RealityKitStreamView.swift in Sources */,
 				B1EDB1392D4D95A700EB1839 /* ObservableConnectionManager.swift in Sources */,

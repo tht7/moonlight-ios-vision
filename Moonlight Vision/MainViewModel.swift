@@ -63,51 +63,79 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         return name1WithoutLocal.caseInsensitiveCompare(name2WithoutLocal) == .orderedSame
     }
 
+    // Add this computed property to filter hosts based on pairState
+    var hostsWithPairState: [TemporaryHost] {
+        return hosts.filter { host in
+            return host.pairState == .paired || host.pairState == .unpaired
+        }
+    }
+
 
     func setHosts(newHosts: [TemporaryHost]) {
         print("setHosts - START - Current hosts count: \(hosts.count), New hosts count: \(newHosts.count)")
         print("setHosts - Old hosts before processing: \(hosts.map { ($0.name, $0.uuid) })")
 
-        // 1. Deduplicate newHosts based on UUID (keep last occurrence)
         var deduplicatedNewHosts: [TemporaryHost] = []
-        var seenUUIDs = Set<String>() // Set to track UUIDs
+        var seenBaseNames: [String: TemporaryHost] = [:] // Track base names and preferred host
 
-        print("setHosts - Starting UUID-based deduplication of newHosts...")
-        for host in newHosts.reversed() {
-            let uuid = host.uuid // Directly access non-optional uuid
-            if !seenUUIDs.contains(uuid) {
-                deduplicatedNewHosts.append(host)
-                seenUUIDs.insert(uuid)
-                print("setHosts - Deduplication: Keeping host (UUID: \(uuid)): \(host.name)")
+        print("setHosts - Starting name-based deduplication with '.local' preference of newHosts...")
+        for host in newHosts.reversed() { // Iterate in reversed order to prioritize later entries
+            let hostName = host.name
+            let baseName = hostName.hasSuffix(".local") ? String(hostName.dropSuffix(".local")) : hostName
+            let hasLocalSuffix = hostName.hasSuffix(".local")
+
+            if let existingPreferredHost = seenBaseNames[baseName] {
+                let existingHostName = existingPreferredHost.name
+                let existingHasLocalSuffix = existingHostName.hasSuffix(".local")
+
+                if hasLocalSuffix && !existingHasLocalSuffix {
+                    // Current host has '.local', existing preferred does not. Keep existing.
+                    print("setHosts - Name Deduplication: Keeping existing preferred host '\(existingHostName)' (no '.local') for base name '\(baseName)'. Discarding '\(hostName)'.")
+                } else if !hasLocalSuffix && existingHasLocalSuffix {
+                    // Current host no '.local', existing preferred has '.local'. Replace with current.
+                    print("setHosts - Name Deduplication: Replacing existing preferred host '\(existingHostName)' (with '.local') with preferred host '\(hostName)' (no '.local') for base name '\(baseName)'.")
+                    seenBaseNames[baseName] = host // Update preferred host
+                } else {
+                    // No preference difference or both have/don't have '.local'. Keep existing preferred (which is the *later* one in reversed loop).
+                    print("setHosts - Name Deduplication: Duplicate name '\(hostName)' for base name '\(baseName)'. Keeping existing preferred host '\(existingHostName)'. Discarding '\(hostName)'. (No '.local' preference difference)")
+                }
             } else {
-                print("setHosts - Deduplication: Duplicate host UUID (\(uuid)) found for host \(host.name). Discarding.")
+                // First time seeing this base name
+                seenBaseNames[baseName] = host // Set current host as preferred for this base name
+                print("setHosts - Name Deduplication: First time seeing base name '\(baseName)'. Keeping host '\(hostName)'.")
+                deduplicatedNewHosts.append(host) // Add to deduplicated list
             }
         }
-        deduplicatedNewHosts.reverse() // Restore original order
-        print("setHosts - UUID-based deduplication of newHosts complete. Deduplicated count: \(deduplicatedNewHosts.count), Hosts: \(deduplicatedNewHosts.map { ($0.name, $0.uuid) })")
+        // Reconstruct deduplicatedNewHosts from seenBaseNames, maintaining original order as much as possible
+        deduplicatedNewHosts = seenBaseNames.values.sorted { newHosts.firstIndex(of: $0)! < newHosts.firstIndex(of: $1)! }
+
+        print("setHosts - Name-based deduplication complete. Deduplicated count: \(deduplicatedNewHosts.count), Hosts: \(deduplicatedNewHosts.map { ($0.name, $0.uuid) })")
 
 
-        // 2. Merge deduplicatedNewHosts with existing hosts based on UUID (replace or append)
+        // 2. Merge deduplicatedNewHosts with existing hosts based on NAME (replace or append) - Modified Merge to be Name-Based
         var mergedHosts: [TemporaryHost] = []
         mergedHosts.append(contentsOf: hosts) // Start with existing hosts
         print("setHosts - Initial mergedHosts (copy of existing hosts): \(mergedHosts.map { ($0.name, $0.uuid) })")
 
-        print("setHosts - Starting UUID-based merge process...")
+        print("setHosts - Starting name-based merge process...")
         for newHost in deduplicatedNewHosts {
-            let newHostUUID = newHost.uuid // Directly access non-optional uuid
+            let newHostName = newHost.name
+            let newHostBaseName = newHostName.hasSuffix(".local") ? String(newHostName.dropSuffix(".local")) : newHostName
+
 
             if let existingIndex = mergedHosts.firstIndex(where: { existingHost in
-                let existingHostUUID = existingHost.uuid // Directly access non-optional uuid
-                return existingHostUUID == newHostUUID
+                let existingHostName = existingHost.name
+                let existingHostBaseName = existingHostName.hasSuffix(".local") ? String(existingHostName.dropSuffix(".local")) : existingHostName
+                return existingHostBaseName == newHostBaseName
             }) {
-                print("setHosts - Merge: Host with same UUID (\(newHostUUID)) found in mergedHosts at index \(existingIndex). Replacing with: \(newHost.name)")
+                print("setHosts - Merge: Host with same base name '\(newHostBaseName)' found in mergedHosts at index \(existingIndex). Replacing with: \(newHost.name)")
                 mergedHosts[existingIndex] = newHost // Replace existing host
             } else {
-                print("setHosts - Merge: New host UUID (\(newHostUUID)) not found in mergedHosts. Appending: \(newHost.name)")
+                print("setHosts - Merge: New host base name '\(newHostBaseName)' not found in mergedHosts. Appending: \(newHost.name)")
                 mergedHosts.append(newHost) // Append new host
             }
         }
-        print("setHosts - UUID-based merge process complete. Final mergedHosts count: \(mergedHosts.count), Hosts: \(mergedHosts.map { ($0.name, $0.uuid) })")
+        print("setHosts - Name-based merge process complete. Final mergedHosts count: \(mergedHosts.count), Hosts: \(mergedHosts.map { ($0.name, $0.uuid) })")
 
 
         // 3. Update the hosts array
@@ -115,26 +143,31 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         hosts.append(contentsOf: mergedHosts) // Set hosts to the merged and deduplicated list
         print("setHosts - hosts array updated with mergedHosts. Final hosts count: \(hosts.count), Hosts: \(hosts.map { ($0.name, $0.uuid) })")
         print("setHosts - END")
+        stopRefresh()
+
     }
-    
+
     func addHost(newHost: TemporaryHost) {
         print("addHost - START - Attempting to add host: \(newHost.name), UUID: \(newHost.uuid), Address: \(newHost.address), Current hosts count: \(hosts.count)")
-        // **First, check for object identity.** (Keep this check)
+
+        // **First, check for object identity.** (Keep this check for immediate object references)
         if hosts.contains(where: { $0 === newHost }) {
             print("addHost - Host already exists in array by object identity: \(newHost.name), UUID: \(newHost.uuid). NOT appending.")
             print("addHost - END - Host not added (identity)")
             return // Do not add if it's the exact same object
         }
 
-        print("addHost - No identity match. Proceeding to append (after delay).")
-        print("addHost - Started 5-second delay before appending host: \(newHost.name), UUID: \(newHost.uuid)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-            print("addHost - Delay finished, now appending host: \(newHost.name), UUID: \(newHost.uuid)")
-            self.hosts.append(newHost)
-            print("addHost - Host appended. Current hosts array: \(self.hosts.map { ($0.name, $0.uuid) })")
-            print("addHost - END - Host appended")
+        // **Second, check for existing host with the same UUID.** (Add UUID check)
+        if hosts.contains(where: { $0.uuid == newHost.uuid }) {
+            print("addHost - Host with same UUID already exists: \(newHost.name), UUID: \(newHost.uuid). NOT appending (UUID duplicate).")
+            print("addHost - END - Host not added (UUID duplicate)")
+            return // Do not add if a host with the same UUID already exists
         }
-        print("addHost - END - Delay started") // Log end even when delay is started
+
+        print("addHost - No identity or UUID match. Proceeding to append host: \(newHost.name), UUID: \(newHost.uuid)")
+        self.hosts.append(newHost) // Append immediately, no delay
+        print("addHost - Host appended. Current hosts array: \(self.hosts.map { ($0.name, $0.uuid) })")
+        print("addHost - END - Host appended")
     }
 
     func removeHost(_ hostToRemove: TemporaryHost) { // Renamed parameter for clarity
@@ -232,20 +265,6 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     }
 
     func updateHost(host: TemporaryHost) async {
-        print("updateHost - Starting for host: \(host), initial name: \(host.name)") // Log initial name
-
-        // 1. Check if a host with the same name (or same name without .local) already exists in dataManager
-        if let savedHosts = dataManager.getHosts() as? [TemporaryHost] {
-            for savedHost in savedHosts {
-                if compareHostNamesIgnoringLocal(host.name, savedHost.name) {
-                    print("updateHost - Host with the same name already saved, skipping update: \(host.name)")
-                    //stopRefresh()
-                    return // Skip dataManager.update if host with same name is already saved
-                }
-            }
-        }
-
-
         Task {
             let httpManager = HttpManager(host: host)
             discoveryManager?.pauseDiscovery(for: host)
@@ -258,27 +277,14 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
 
             host.updatePending = false
             if serverInfoResponse.isStatusOk() {
-                print("updateHost - Server info OK for host: \(host), before populate name: \(host.name)") // Log before populate
+                print("Successfully updated host: \(host)")
                 serverInfoResponse.populateHost(host)
-                print("updateHost - Server info OK for host: \(host), after populate name: \(host.name)") // Log after populate
-                dataManager.update(host)
-                //stopRefresh()
             } else {
-                print("updateHost - Server info FAILED for host: \(host), before default name: \(host.name)")
-                // Set a default name if server info fetch fails
-                if host.name.isEmpty {
-                    if let hostAddress = host.address { // Use address if available
-                        host.name = "Host at \(hostAddress)"
-                    } else {
-                        host.name = "Discovered Host (No Info)" // Fallback if no address either
-                    }
-                }
-                print("updateHost - Server info FAILED for host: \(host), after default name: \(host.name)")
-                //stopRefresh()
+                print("Failed to update host: \(serverInfoResponse.statusMessage ?? "unknown error")")
             }
-            // Update the host in DataManager even if server info fetch failed (with default name)
         }
     }
+
 
 
     func refreshAppsFor(host: TemporaryHost) {
