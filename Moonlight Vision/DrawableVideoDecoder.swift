@@ -131,6 +131,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             print("ERROR")
             return
         }
+        
         var planes = CVPixelBufferGetPlaneCount(imageBuffer)
         //            print("Image with planes: \(planes)")
         var imageTexture: CVMetalTexture?
@@ -325,8 +326,9 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             ) {
                 self.formatDesc = formatDesc
                 // rgba16Float
-                let attributes = [kCVPixelBufferPixelFormatTypeKey : decodingFormat /*kCVPixelFormatType_32BGRA , kCVPixelFormatType_420YpCbCr8BiPlanarFullRange*/] as CFDictionary
-                VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: formatDesc, decoderSpecification: nil, imageBufferAttributes: attributes, outputCallback: &self.decoderCallback, decompressionSessionOut: &self.session)
+                let videoDecoderSpecification:[NSString: AnyObject] = [kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder:kCFBooleanTrue]
+                let attributes = [kCVPixelBufferPixelFormatTypeKey : decodingFormat /*kCVPixelFormatType_32BGRA , kCVPixelFormatType_420YpCbCr8BiPlanarFullRange*/, kCVPixelBufferMetalCompatibilityKey: true, kCVPixelBufferPoolMinimumBufferCountKey: 3] as CFDictionary
+                VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: formatDesc, decoderSpecification: videoDecoderSpecification as CFDictionary, imageBufferAttributes: attributes, outputCallback: &self.decoderCallback, decompressionSessionOut: &self.session)
             } else {
                 // Couldn’t create format description yet
 //                free(dataPtr)
