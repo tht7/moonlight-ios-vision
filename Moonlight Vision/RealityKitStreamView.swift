@@ -17,14 +17,14 @@ let MAX_WIDTH_METERS: Float = 2
 class DummyControllerDelegate: NSObject, ControllerSupportDelegate {
     func gamepadPresenceChanged() {
     }
-    
+
     func mousePresenceChanged() {
     }
-    
+
     func streamExitRequested() {
     }
-    
-    
+
+
 }
 
 struct RealityKitStreamView: View {
@@ -32,9 +32,9 @@ struct RealityKitStreamView: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var viewModel: MainViewModel
-    
+
     @Binding var streamConfig: StreamConfiguration
-    
+
     @State var curveMagnitudeMemory: Float = 0
     @State var curveAnimationMultiplier: Float = 1
     @State var controllerSupport: ControllerSupport?
@@ -44,17 +44,17 @@ struct RealityKitStreamView: View {
             Float(streamConfig.height) / Float(streamConfig.width)
         }
     }
-    
+
     @State var animationTimer: Timer?
-    
+
     @State var _streamMan: StreamManager?
     @ObservedObject var connectionCallbacks: ObservableConnectionManager = ObservableConnectionManager()
-    
+
     @State var enlarge = false
-    
+
     @State var texture: TextureResource
     @State var screen: ModelEntity = ModelEntity()
-    
+
     init(streamConfig: Binding<StreamConfiguration>) {
         self._streamConfig = streamConfig
         self.controllerSupport = ControllerSupport(config: streamConfig.wrappedValue, delegate: DummyControllerDelegate())
@@ -69,7 +69,7 @@ struct RealityKitStreamView: View {
             )
         )
     }
-    
+
     var body: some View {
         GeometryReader3D { proxy in
             ZStack {
@@ -87,7 +87,7 @@ struct RealityKitStreamView: View {
         }
         .handlesGameControllerEvents(matching: .gamepad)
         .ornament(attachmentAnchor: .scene(.bottomTrailingFront), contentAlignment: .bottomLeading) {
-            StreamControls(horizontal: false) {
+            StreamControls(horizontal: false, streamConfig: $streamConfig) {
                 HStack {
                     Button("Flatten", systemImage: viewModel.streamSettings.realitykitRendererCurvature == 0 ? "light.panel" : "pano.fill") {
                         if viewModel.streamSettings.realitykitRendererCurvature == 0 {
@@ -176,9 +176,9 @@ struct RealityKitStreamView: View {
         }
         .persistentSystemOverlays(viewModel.dimPassthrough ? .hidden : .automatic)
         .preferredSurroundingsEffect(viewModel.dimPassthrough ? .systemDark : nil)
-        
+
     }
-    
+
     func animateOpening() {
         Task {
             self.animationTimer = Timer.scheduledTimer(withTimeInterval: 0.04,
@@ -197,21 +197,21 @@ struct RealityKitStreamView: View {
             self.animationTimer?.fire()
         }
     }
-    
+
     static func generateCurvedPlane(
         width: Float, aspectRatio: Float, resulotion: (UInt32, UInt32), curveMagnitude: Float = 1.0
     ) throws -> MeshResource {
         //TODO maybe use a LowLevelMesh here, I think it can compute the mesh on the GPU AND avoid additional allocations
         var descr = MeshDescriptor()
         let height = width * aspectRatio
-        
+
         let totalVertices = Int(resulotion.0 * resulotion.1)
         var meshPositions: [SIMD3<Float>] = .init(repeating: .zero, count: totalVertices)
         var textureMap: [SIMD2<Float>] = .init(repeating: .zero, count: totalVertices)
         var indices: [UInt32] = .init(repeating: .zero, count: totalVertices * 6)
         let floorOffset: Float =  (1 - (height / 2))
         let backOffset = curveMagnitude + 1
-        
+
         for x_v in 0..<(resulotion.0) {
             let vertexCounts = x_v * resulotion.1
             for y_v in 0..<(resulotion.1) {
@@ -219,32 +219,33 @@ struct RealityKitStreamView: View {
                 let xPosition = (Float(x_v) / Float(resulotion.0 - 1) - 0.5) * width
                 let yPosition = ((( 0.5 - Float(y_v) / Float(resulotion.1 - 1))) * height)
                 let zPosition = (pow(xPosition, 2) * curveMagnitude / pow(width / 2, 2))
-                
+
                 meshPositions[vertexIndex] = [xPosition, (-yPosition) - floorOffset, zPosition - curveMagnitude + 1]
                 textureMap[vertexIndex] = [Float(x_v) / Float(resulotion.0 - 1), Float(y_v) / Float(resulotion.1 - 1)]
                 if x_v > 0 && y_v > 0 {
                     let vertexCounts = vertexCounts + y_v - 1
                     let vertexIndex = Int( ( ( x_v - 1) * ( resulotion.1 - 1 ) + ( y_v - 1 ) ) * 6)
-                    
+
                     indices[vertexIndex] = vertexCounts - resulotion.1
                     indices[vertexIndex + 1] = vertexCounts
                     indices[vertexIndex + 2] = vertexCounts - resulotion.1 + 1
-                    
+
                     indices[vertexIndex + 3] = vertexCounts - resulotion.1 + 1
                     indices[vertexIndex + 4] = vertexCounts
                     indices[vertexIndex + 5] = vertexCounts + 1
                 }
             }
         }
-        
+
         descr.primitives = .triangles(indices)
         descr.positions = MeshBuffer(meshPositions)
         descr.textureCoordinates = MeshBuffers.TextureCoordinates(textureMap)
-        
+
         return try .generate(from: [descr])
     }
 }
 
 //#Preview {
+////    NativeStreamView()
 //    NativeStreamView()
 //}

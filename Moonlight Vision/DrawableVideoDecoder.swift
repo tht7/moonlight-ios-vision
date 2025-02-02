@@ -402,7 +402,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             paramPtrs.append(ps.withUnsafeBytes { (bytePtr: UnsafePointer<UInt8>) in bytePtr })
             paramSizes.append(ps.count)
         }
-        
+
         print("parameterSetBuffers count: \(parameterSetBuffers.count)")
         for (index, ps) in parameterSetBuffers.enumerated() {
             print("Parameter Set \(index):")

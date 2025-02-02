@@ -39,7 +39,7 @@ struct ComputerView: View {
                         """)
                     }
                 default:
-                    Text("UNK")
+                    Text("Please Refresh by going to Settings and Back")
                 }
             }
         }.task {

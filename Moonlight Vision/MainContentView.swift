@@ -1,4 +1,11 @@
 //
+//  MainViewModel.swift
+//  Moonlight Vision
+//
+//  Created by Alex Haugland on 1/22/24.
+//  Copyright © 2024 Moonlight Game Streaming Project. All rights reserved.
+//
+
 
 import SwiftUI
 

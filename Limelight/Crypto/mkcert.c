@@ -16,7 +16,6 @@ static const int SERIAL = 0;
 static const int NUM_YEARS = 20;
 
 void mkcert(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int years) {
-    
     X509* cert = X509_new();
     
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
@@ -64,11 +63,9 @@ void mkcert(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int years) {
 }
 
 struct CertKeyPair generateCertKeyPair(void) {
-    BIO *bio_err;
     X509 *x509 = NULL;
     EVP_PKEY *pkey = NULL;
     PKCS12 *p12 = NULL;
-    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     
     mkcert(&x509, &pkey, NUM_BITS, SERIAL, NUM_YEARS);
     
@@ -78,17 +75,17 @@ struct CertKeyPair generateCertKeyPair(void) {
                         pkey,
                         x509,
                         NULL,
-                        0,
-                        0,
+                        NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
+                        -1, // disable certificate encryption
                         2048,
-                        1,
+                        -1, // disable the automatic MAC
                         0);
+    // MAC it ourselves with SHA1 since iOS refuses to load anything else.
+    PKCS12_set_mac(p12, pass, -1, NULL, 0, 1, EVP_sha1());
     
     if (p12 == NULL) {
         printf("Error generating a valid PKCS12 certificate.\n");
     }
-    
-    BIO_free(bio_err);
     
     return (CertKeyPair){x509, pkey, p12};
 }
