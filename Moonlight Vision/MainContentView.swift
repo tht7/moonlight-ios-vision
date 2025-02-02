@@ -11,7 +11,7 @@ import SwiftUI
 
 struct MainContentView: View {
     @EnvironmentObject private var viewModel: MainViewModel
-    
+
     @State private var selectedHost: TemporaryHost?
 
     @State private var addingHost = false
@@ -23,8 +23,9 @@ struct MainContentView: View {
 
 
     var body: some View {
-            TabView {
-                NavigationSplitView {
+        TabView {
+            NavigationSplitView {
+                VStack { // Wrap List and text in a VStack
                     List(viewModel.hosts, selection: $selectedHost) { host in
                         NavigationLink(value: host) {
                             hostRow(for: host)
@@ -51,64 +52,76 @@ struct MainContentView: View {
                             selectedHost = firstHost
                         }
                     }
-                    .navigationTitle("Computers")
-                    .toolbar {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button("Add Server", systemImage: "plus") {
-                                addingHost = true
-                            }.alert(
-                                "Enter server",
-                                isPresented: $addingHost
-                            ) {
-                                TextField("IP or Host", text: $newHostIp)
-                                Button("Add") {
-                                    addingHost = false
-                                    viewModel.manuallyDiscoverHost(hostOrIp: newHostIp)
-                                }
-                                Button("Cancel", role: .cancel) {
-                                    addingHost = false
-                                }
-                            }.alert(
-                                "Unable to add host",
-                                isPresented: $viewModel.errorAddingHost
-                            ) {
-                                Button("Ok", role: .cancel) {
-                                    viewModel.errorAddingHost = true
-                                }
-                            } message: {
-                                Text(viewModel.addHostErrorMessage)
+                    .navigationTitle("Computers") // Keep simple navigation title
+                    // REMOVE the VStack navigationTitle we added before
+
+                    Text("To refresh automatic network discovery, go to settings and come back here.") // Text at the bottom
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding() // Add some bottom padding for visual spacing
+                }
+                .toolbar { // Keep the toolbar as is for now
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Add Server", systemImage: "plus") {
+                            addingHost = true
+                        }.alert(
+                            "Enter server",
+                            isPresented: $addingHost
+                        ) {
+                            TextField("IP or Host", text: $newHostIp)
+                            Button("Add") {
+                                addingHost = false
+                                viewModel.manuallyDiscoverHost(hostOrIp: newHostIp)
                             }
+                            Button("Cancel", role: .cancel) {
+                                addingHost = false
+                            }
+                        }.alert(
+                            "Unable to add host",
+                            isPresented: $viewModel.errorAddingHost
+                        ) {
+                            Button("Ok", role: .cancel) {
+                                viewModel.errorAddingHost = true
+                            }
+                        } message: {
+                            Text(viewModel.addHostErrorMessage)
                         }
                     }
-                } detail: {
-                    if let selectedHost = Binding<TemporaryHost>($selectedHost) {
-                        ComputerView(host: selectedHost)
-                    }
-                }.tabItem {
-                    Label("Computers", systemImage: "desktopcomputer")
                 }
-                .task {
-                    viewModel.loadSavedHosts()
+            } detail: {
+                if let selectedHost = Binding<TemporaryHost>($selectedHost) {
+                    ComputerView(host: selectedHost)
                 }
-                .onAppear {
-                    NotificationCenter.default.addObserver(
-                        self,
-                        selector: #selector(viewModel.beginRefresh),
-                        name: UIApplication.didBecomeActiveNotification,
-                        object: nil
-                    )
-                    viewModel.beginRefresh()
-                }.onDisappear {
-                    viewModel.stopRefresh()
-                    NotificationCenter.default.removeObserver(self)
-                }
-            
-                SettingsView(settings: $viewModel.streamSettings).tabItem {
-                    Label("Settings", systemImage: "gear")
-                }
+            }.tabItem {
+                Label("Computers", systemImage: "desktopcomputer")
             }
+            .task {
+                viewModel.loadSavedHosts()
+            }
+            .onAppear {
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(viewModel.beginRefresh),
+                    name: UIApplication.didBecomeActiveNotification,
+                    object: nil
+                )
+                viewModel.beginRefresh()
+            }.onDisappear {
+                viewModel.stopRefresh()
+                NotificationCenter.default.removeObserver(self)
+            }
+
+            SettingsView(settings: $viewModel.streamSettings).tabItem {
+                Label("Settings", systemImage: "gear")
+            }
+            
+            UpdatesView().tabItem {
+                Label("Changelog", systemImage: "info.circle.fill")
+            }
+
+        }
     }
-    
+
     private func hostRow(for host: TemporaryHost) -> some View {
         VStack {
             Label(host.name,

@@ -60,7 +60,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
     private var framePacing: Bool = false
 
     /// Store parameter set data for H.264 / HEVC
-    private var parameterSetBuffers: [Data] = []
+    private var parameterSetBuffers: [[UInt8]] = []
 
     /// HDR metadata
     private var masteringDisplayColorVolume: Data?
@@ -313,7 +313,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                     // Strip the NAL start and store it
                     var startLen = (dataPtr[2] == 0x01) ? 3 : 4
                     let newData = Data(bytes: dataPtr + startLen, count: Int(length) - startLen)
-                    parameterSetBuffers.append(newData)
+                    parameterSetBuffers.append([UInt8](newData))
                 }
                 // Freed by someone else, presumably
                 return DR_OK
@@ -398,28 +398,26 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         var paramPtrs: [UnsafePointer<UInt8>] = []
         var paramSizes: [Int] = []
 
-        for ps in parameterSetBuffers {
-            paramPtrs.append(ps.withUnsafeBytes { (bytePtr: UnsafePointer<UInt8>) in bytePtr })
+        for (index, ps) in parameterSetBuffers.enumerated() {
+            paramPtrs.append(UnsafePointer<UInt8>(parameterSetBuffers[index]))
             paramSizes.append(ps.count)
         }
-
-        var formatDesc: CMVideoFormatDescription?
+        
+        var fromatDesc: CMFormatDescription?
         let status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
             allocator: kCFAllocatorDefault,
             parameterSetCount: parameterSetCount,
-            parameterSetPointers: &paramPtrs,
-            parameterSetSizes: &paramSizes,
+            parameterSetPointers: paramPtrs,
+            parameterSetSizes: paramSizes,
             nalUnitHeaderLength: Int32(NAL_LENGTH_PREFIX_SIZE),
-            formatDescriptionOut: &formatDesc
+            formatDescriptionOut: &fromatDesc
         )
-
-        parameterSetBuffers.removeAll()
 
         if status != noErr {
             print("Failed to create H264 format description: \(status)")
             return nil
         }
-        return formatDesc
+        return fromatDesc
     }
 
     /// Creates an HEVC `CMVideoFormatDescription` from the stored `parameterSetBuffers`.
@@ -429,15 +427,10 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         var paramSizes: [Int] = []
 
         for ps in parameterSetBuffers {
-            let uint8Ptr = UnsafeMutablePointer<UInt8>.allocate(capacity: ps.count)
-            ps.withUnsafeBytes { (rawPtr: UnsafeRawBufferPointer) in
-                // This might be an extra memcpy shameeeeee
-                uint8Ptr.initialize(from: rawPtr.baseAddress!.assumingMemoryBound(to: UInt8.self), count: ps.count)
-                paramPtrs.append(uint8Ptr)
-                paramSizes.append(ps.count)
-            }
+            paramPtrs.append(UnsafePointer<UInt8>(ps))
+            paramSizes.append(ps.count)
         }
-
+        
         // Prepare metadata dictionary
         var videoFormatParams: NSMutableDictionary = NSMutableDictionary()
 
@@ -450,25 +443,25 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             videoFormatParams.setObject(masteringDisplayColorVolume, forKey: kCMFormatDescriptionExtension_MasteringDisplayColorVolume as NSString)
         }
 
-        var formatDesc = UnsafeMutablePointer<CMFormatDescription?>.allocate(capacity: 1)
+        var formatDesc: CMFormatDescription?
         let status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(
             allocator: kCFAllocatorDefault,
             parameterSetCount: parameterSetCount,
-            parameterSetPointers: UnsafePointer<UnsafePointer<UInt8>>(paramPtrs),
-            parameterSetSizes: UnsafePointer<Int>(paramSizes),
+            parameterSetPointers: paramPtrs,
+            parameterSetSizes: paramSizes,
             nalUnitHeaderLength: Int32(NAL_LENGTH_PREFIX_SIZE),
             extensions: videoFormatParams as CFDictionary,
-            formatDescriptionOut: formatDesc
+            formatDescriptionOut: &formatDesc
         )
 
-        parameterSetBuffers.removeAll()
-        _ = paramPtrs.map(UnsafePointer<UInt8>.deallocate)
-        paramPtrs.removeAll()
+//        parameterSetBuffers.removeAll()
+//        _ = paramPtrs.map(UnsafePointer<UInt8>.deallocate)
+//        paramPtrs.removeAll()
         if status != noErr {
             print("Failed to create HEVC format description: \(status)")
             return nil
         }
-        return formatDesc.pointee
+        return formatDesc
     }
 
     /// Creates an AV1 `CMVideoFormatDescription` from the data for an IDR frame.

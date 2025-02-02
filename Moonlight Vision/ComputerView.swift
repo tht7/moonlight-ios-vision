@@ -39,7 +39,7 @@ struct ComputerView: View {
                         """)
                     }
                 default:
-                    Text("Please Refresh by going to Settings and Back")
+                    Text("Please Refresh by going to Settings and Back, or you've already paired this computer.")
                 }
             }
         }.task {
