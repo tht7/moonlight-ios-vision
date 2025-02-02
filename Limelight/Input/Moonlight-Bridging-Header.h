@@ -5,6 +5,7 @@
 #import "AppAssetManager.h"
 #import "AppDelegate.h"
 #import "ConnectionHelper.h"
+#import "Connection.h"
 #import "CryptoManager.h"
 #import "DataManager.h"
 #import "DiscoveryManager.h"
@@ -17,6 +18,10 @@
 #import "StreamFrameViewController.h"
 #import "Utils.h"
 #import "WakeOnLanManager.h"
+#import "StreamManager.h"
+#import "ConnectionCallbacks.h"
+#import "Limelight.h"
+#import "HDRParsingUtils.h"
 
 #import "MoonlightApp+CoreDataClass.h"
 #import "MoonlightHost+CoreDataClass.h"

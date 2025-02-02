@@ -19,11 +19,22 @@
 }
 
 - (void) populateHost:(TemporaryHost*)host {
-    host.name = [[self getStringTag:TAG_HOSTNAME] trim];
+    NSString *hostnameFromResponse = [[self getStringTag:TAG_HOSTNAME] trim];
+
+    // Check if hostnameFromResponse is valid (not nil and not empty after trimming)
+    if (hostnameFromResponse != nil && ![hostnameFromResponse isEqualToString:@""]) {
+        host.name = hostnameFromResponse; // Use hostname from response if valid
+    } else {
+        //Log(LOG_I, "ServerInfoResponse: populateHost - Hostname from ServerInfoResponse is missing or empty. Using existing host.name: %@", host.name);
+        // Fallback: Keep the existing host.name (which should be from MDNS discovery)
+        // Or, if you want a generic fallback name if even host.name is empty:
+        host.name = @"Unnamed Host";
+    }
+
     host.uuid = [[self getStringTag:TAG_UNIQUE_ID] trim];
     host.mac = [[self getStringTag:TAG_MAC_ADDRESS] trim];
     host.currentGame = [[self getStringTag:TAG_CURRENT_GAME] trim];
-    
+
     NSInteger httpsPort;
     if ([self getIntTag:TAG_HTTPS_PORT value:&httpsPort]) {
         host.httpsPort = (unsigned short)httpsPort;
@@ -32,12 +43,12 @@
         // Use the default if it's not specified
         host.httpsPort = 47984;
     }
-    
+
     // We might get an IPv4 loopback address if we're using GS IPv6 Forwarder
     NSString *lanAddr = [[self getStringTag:TAG_LOCAL_IP] trim];
     if (![lanAddr hasPrefix:@"127."]) {
         unsigned short localPort;
-        
+
         // If we reached this host through this port, store our port there
         if (host.activeAddress && [lanAddr isEqualToString:[Utils addressPortStringToAddress:host.activeAddress]]) {
             localPort = [Utils addressPortStringToPort:host.activeAddress];
@@ -50,10 +61,10 @@
             // If all else fails, use 47989
             localPort = 47989;
         }
-        
+
         host.localAddress = [Utils addressAndPortToAddressPortString:lanAddr port:localPort];
     }
-    
+
     // This is a Sunshine extension for WAN port remapping
     NSInteger externalHttpPort;
     if (![self getIntTag:TAG_EXTERNAL_PORT value:&externalHttpPort]) {
@@ -66,7 +77,7 @@
             externalHttpPort = 47989;
         }
     }
-    
+
     // Modern GFE versions don't actually give us a WAN address anymore
     // so we leave the one that we populated from mDNS discovery via STUN.
     NSString *wanAddr = [[self getStringTag:TAG_EXTERNAL_IP] trim];
@@ -77,7 +88,7 @@
         // If we have an external address (via STUN) already, we still need to populate the port
         host.externalAddress = [Utils addressAndPortToAddressPortString:[Utils addressPortStringToAddress:host.externalAddress] port:externalHttpPort];
     }
-    
+
     NSString *state = [[self getStringTag:TAG_STATE] trim];
     if (![state hasSuffix:@"_SERVER_BUSY"]) {
         // GFE 2.8 started keeping currentgame set to the last game played. As a result, it no longer
@@ -85,17 +96,17 @@
         // as possible, we'll force the current game to zero if the server isn't in a streaming session.
         host.currentGame = @"0";
     }
-    
+
     // GFE uses the Mjolnir codename in their state enum values
     host.isNvidiaServerSoftware = [state containsString:@"MJOLNIR"];
-    
+
     NSInteger pairStatus;
     if ([self getIntTag:TAG_PAIR_STATUS value:&pairStatus]) {
         host.pairState = pairStatus ? PairStatePaired : PairStateUnpaired;
     } else {
         host.pairState = PairStateUnknown;
     }
-    
+
     NSString *serverCodecModeString = [self getStringTag:@"ServerCodecModeSupport"];
     if (serverCodecModeString != nil) {
         host.serverCodecModeSupport = [[serverCodecModeString trim] intValue];
