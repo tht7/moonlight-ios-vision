@@ -38,6 +38,7 @@ struct RealityKitStreamView: View {
     @State var curveMagnitudeMemory: Float = 0
     @State var curveAnimationMultiplier: Float = 1
     @State var controllerSupport: ControllerSupport?
+    @State var height: Float = 0
 
     var aspectRatio: Float {
         get {
@@ -81,6 +82,7 @@ struct RealityKitStreamView: View {
                     let mesh = try! RealityKitStreamView.generateCurvedPlane(width: MAX_WIDTH_METERS, aspectRatio: aspectRatio, resulotion: (50,50), curveMagnitude: viewModel.streamSettings.realitykitRendererCurvature * curveAnimationMultiplier)
                     let size = content.convert(proxy.frame(in: .local), from: .local, to: .scene)
                     screen.transform.scale = .init(repeating: size.extents.x / 2)
+                    screen.transform.translation.y = height
                     try! screen.model!.mesh.replace(with: mesh.contents)
                 }
             }
@@ -98,6 +100,22 @@ struct RealityKitStreamView: View {
                         }
                     }
                     Slider(value: $viewModel.streamSettings.realitykitRendererCurvature, in: (0...1), step: 0.001)
+                        .frame(width: 300)
+                        .padding([.trailing])
+                        .hoverEffect { effect, isActive, proxy in
+                            effect.clipShape(.capsule.size(
+                                width: isActive ? proxy.size.width : proxy.size.height,
+                                height: proxy.size.height,
+                                anchor: .leading
+                            ))
+                            //                            effect.scaleEffect(x: isActive ? 1: 0.5, y: 1, anchor: .leading)
+                        }
+                }
+                HStack {
+                    Button("arrow.up.and.line.horizontal.and.arrow.down", systemImage: "arrow.up.and.line.horizontal.and.arrow.down") {
+                        // Do nothing, just display this button like a neat littel label
+                    }
+                    Slider(value: $height, in: (0...1), step: 0.001)
                         .frame(width: 300)
                         .padding([.trailing])
                         .hoverEffect { effect, isActive, proxy in
