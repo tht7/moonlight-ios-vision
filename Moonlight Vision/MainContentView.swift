@@ -1,5 +1,5 @@
 //
-//  MainViewModel.swift
+//  MainContentView.swift
 //  Moonlight Vision
 //
 //  Created by Alex Haugland on 1/22/24.
@@ -26,7 +26,7 @@ struct MainContentView: View {
         TabView {
             NavigationSplitView {
                 VStack { // Wrap List and text in a VStack
-                    List(viewModel.hosts, selection: $selectedHost) { host in
+                    List(viewModel.hostsWithPairState, selection: $selectedHost) { host in
                         NavigationLink(value: host) {
                             hostRow(for: host)
                         }

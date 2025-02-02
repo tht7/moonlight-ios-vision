@@ -63,6 +63,13 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         return name1WithoutLocal.caseInsensitiveCompare(name2WithoutLocal) == .orderedSame
     }
 
+    // Add this computed property to filter hosts based on pairState
+    var hostsWithPairState: [TemporaryHost] {
+        return hosts.filter { host in
+            return host.pairState == .paired || host.pairState == .unpaired
+        }
+    }
+
 
     func setHosts(newHosts: [TemporaryHost]) {
         print("setHosts - START - Current hosts count: \(hosts.count), New hosts count: \(newHosts.count)")
@@ -139,7 +146,7 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         stopRefresh()
 
     }
-    
+
     func addHost(newHost: TemporaryHost) {
         print("addHost - START - Attempting to add host: \(newHost.name), UUID: \(newHost.uuid), Address: \(newHost.address), Current hosts count: \(hosts.count)")
 

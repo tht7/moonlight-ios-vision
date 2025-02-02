@@ -45,6 +45,9 @@ struct UpdatesView: View {
                             .font(.body)
                         Text("- Changelog tab added to track updates.")
                             .font(.body)
+                        Text("- Keep in mind you can enable two finger to enlarge window to make uikit windows larger than what the handle lets you make it, you will have to enable that in the settings.")
+                            .font(.body)
+
                     }
                     .padding(.vertical) // Keep vertical padding
                     .frame(maxWidth: .infinity, alignment: .leading) // Ensure VStack takes full width and aligns content to leading
@@ -76,6 +79,9 @@ struct UpdatesView: View {
                         Text("- If a connection fails in UIKit, you are not able to close the window, you have to forcequit.")
                             .font(.body)
                             .foregroundColor(.white)
+                        Text("- The uikit aspect ratio button likely won't work with onscreen controls turn on (but does anyone even use those?).")
+                            .font(.body)
+                            .foregroundColor(.white)
                         Text("- According to user reports, PS4 touch pad does not work, we added a 'home' button in reality kit but it's not in reality kit yet. This is an SDL issue, Moonlight uses SDL2 but the latest version is SDL3, would take some large effort to update everything to be SDL3 compliant.")
                             .font(.body)
                             .foregroundColor(.white)
@@ -87,6 +93,9 @@ struct UpdatesView: View {
                 
                 Section(header: Text("Feature Requests")) { // Section for older updates
                     VStack(alignment: .leading) {
+                        Text("- Virtual Keyboard Button.")
+                            .font(.body)
+                            .foregroundColor(.white)
                         Text("- Microphone Support.")
                             .font(.body)
                             .foregroundColor(.white)
