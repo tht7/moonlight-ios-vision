@@ -26,8 +26,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>GCRequiresControllerUserInteraction</key>
 	<dict>
-	<key>visionOS</key>
-	<true/>
+		<key>visionOS</key>
+		<true/>
 	</dict>
 	<key>GCSupportedGameControllers</key>
 	<array>
@@ -57,6 +57,13 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Moonlight uses the local network to connect to your gaming PC for streaming.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict/>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

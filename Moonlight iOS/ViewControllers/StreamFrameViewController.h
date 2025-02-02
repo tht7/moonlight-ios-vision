@@ -7,7 +7,6 @@
 //
 
 #import "Connection.h"
-#import "StreamConfiguration.h"
 #import "StreamView.h"
 
 #import <UIKit/UIKit.h>
@@ -19,7 +18,7 @@
 #else
 @interface StreamFrameViewController : UIViewController <ConnectionCallbacks, ControllerSupportDelegate, UserInteractionDelegate, UIScrollViewDelegate>
 #endif
-@property (nonatomic) StreamConfiguration* streamConfig;
+@property (nonatomic, strong) StreamConfiguration* streamConfig;
 
 -(void)updatePreferredDisplayMode:(BOOL)streamActive;
 @end

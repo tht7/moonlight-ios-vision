@@ -8,6 +8,7 @@
 
 #import "VideoDecoderRenderer.h"
 #import "StreamView.h"
+#import "NSData+Conversion.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavcodec/cbs.h>
@@ -443,13 +444,22 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
             size_t parameterSetCount = [parameterSetBuffers count];
             const uint8_t* parameterSetPointers[parameterSetCount];
             size_t parameterSetSizes[parameterSetCount];
+            Log(LOG_I, @"Constructing new H264 format description");
+            Log(LOG_I, @"parameterSetBuffers count: %i", [parameterSetBuffers count]);
+            
             for (int i = 0; i < parameterSetCount; i++) {
                 NSData* parameterSet = parameterSetBuffers[i];
                 parameterSetPointers[i] = parameterSet.bytes;
                 parameterSetSizes[i] = parameterSet.length;
+                
+                Log(LOG_I, @"Parameter Set %i:", i);
+                Log(LOG_I, @" Data (hex): %@:", [parameterSet hexadecimalString]);
+                Log(LOG_I, @" Size: %i", parameterSet.length);
+                Log(LOG_I, @" Pointer: %p", parameterSetPointers[i]);
             }
             
-            Log(LOG_I, @"Constructing new H264 format description");
+            Log(LOG_I, @"parameterSetCount: %i", parameterSetCount);
+            Log(LOG_I, @"nalUnitHeaderLength: %i", NAL_LENGTH_PREFIX_SIZE);
             status = CMVideoFormatDescriptionCreateFromH264ParameterSets(kCFAllocatorDefault,
                                                                          parameterSetCount,
                                                                          parameterSetPointers,

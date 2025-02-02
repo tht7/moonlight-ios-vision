@@ -25,6 +25,11 @@ static const float POLL_RATE = 2.0f; // Poll every 2 seconds
     self = [super init];
     _host = host;
     _uniqueId = uniqueId;
+    
+    // Log when a DiscoveryWorker is created and the host UUID
+    Log(LOG_I, @"DiscoveryWorker: Created for host: %@, UUID: %@", _host.name, _host.uuid);
+
+    
     return self;
 }
 
@@ -85,6 +90,8 @@ static const float POLL_RATE = 2.0f; // Poll every 2 seconds
 }
 
 - (void) discoverHost {
+    Log(LOG_I, @"DiscoveryWorker: discoverHost started for host: %@, UUID: %@", _host.name, _host.uuid);
+
     BOOL receivedResponse = NO;
     NSArray *addresses = [self getHostAddressList];
     
@@ -136,6 +143,7 @@ static const float POLL_RATE = 2.0f; // Poll every 2 seconds
 }
 
 - (BOOL) checkResponse:(ServerInfoResponse*)response {
+    
     if ([response isStatusOk]) {
         // If the response is from a different host then do not update this host
         if ((_host.uuid == nil || [[response getStringTag:TAG_UNIQUE_ID] isEqualToString:_host.uuid])) {

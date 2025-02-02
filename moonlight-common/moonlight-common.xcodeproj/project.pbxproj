@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3E80AA702C4DF119006A10EA /* OpenSSL.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E80AA6F2C4DF119006A10EA /* OpenSSL.xcframework */; };
+		3E9440F32D4EB9CD0047E0C2 /* OpenSSL in Frameworks */ = {isa = PBXBuildFile; productRef = 3E9440F22D4EB9CD0047E0C2 /* OpenSSL */; };
 		983091DE24CEB69B00A0835D /* ConnectionTester.c in Sources */ = {isa = PBXBuildFile; fileRef = 983091DD24CEB69B00A0835D /* ConnectionTester.c */; };
 		983091DF24CEB69B00A0835D /* ConnectionTester.c in Sources */ = {isa = PBXBuildFile; fileRef = 983091DD24CEB69B00A0835D /* ConnectionTester.c */; };
 		9857AEF01EBE85E10084F99E /* rs.c in Sources */ = {isa = PBXBuildFile; fileRef = 9857AEEE1EBE85E10084F99E /* rs.c */; };
@@ -172,7 +172,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3E80AA702C4DF119006A10EA /* OpenSSL.xcframework in Frameworks */,
+				3E9440F32D4EB9CD0047E0C2 /* OpenSSL in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -367,6 +367,7 @@
 			);
 			name = "moonlight-common";
 			packageProductDependencies = (
+				3E9440F22D4EB9CD0047E0C2 /* OpenSSL */,
 			);
 			productName = "limelight-common";
 			productReference = FB290E2E19B37A4E004C83CF /* libmoonlight-common.a */;
@@ -398,6 +399,7 @@
 			);
 			mainGroup = FB290E2519B37A4E004C83CF;
 			packageReferences = (
+				3E9440F12D4EB9CD0047E0C2 /* XCRemoteSwiftPackageReference "OpenSSL" */,
 			);
 			productRefGroup = FB290E2F19B37A4E004C83CF /* Products */;
 			projectDirPath = "";
@@ -743,6 +745,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		3E9440F12D4EB9CD0047E0C2 /* XCRemoteSwiftPackageReference "OpenSSL" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/krzyzanowskim/OpenSSL";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.3.2000;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3E9440F22D4EB9CD0047E0C2 /* OpenSSL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3E9440F12D4EB9CD0047E0C2 /* XCRemoteSwiftPackageReference "OpenSSL" */;
+			productName = OpenSSL;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = FB290E2619B37A4E004C83CF /* Project object */;
 }
