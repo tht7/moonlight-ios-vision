@@ -175,13 +175,13 @@ struct RealityKitStreamView: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                print("active")
+                //print("active")
                 break
             case .inactive:
-                print("inactive")
+                //print("inactive")
                 dismissWindow()
             case .background:
-                print("background -> a/b/c disappeared")
+                //print("background -> a/b/c disappeared")
                 dismissWindow()
                 viewModel.activelyStreaming = false
                 _streamMan?.stopStream()
@@ -189,7 +189,7 @@ struct RealityKitStreamView: View {
                 controllerSupport?.cleanup()
                 openWindow(id: "mainView")
             @unknown default:
-                print("unknown default")
+                //print("unknown default")
             }
         }
         .persistentSystemOverlays(viewModel.dimPassthrough ? .hidden : .automatic)

@@ -30,7 +30,7 @@ struct MoonlightVisionApp: SwiftUI.App {
                     set: { n in streamConfig.wrappedValue = n }
                 ))
                 .onDisappear {
-                    print("SteamWindowClosedOutside")
+                    //print("SteamWindowClosedOutside")
                 }
                     .environmentObject(appDelegate.mainViewModel)
                     .onChange(of: appDelegate.mainViewModel) {
