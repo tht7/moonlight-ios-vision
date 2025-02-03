@@ -1,5 +1,5 @@
 //
-//  NativeStreamView.swift
+//  RealityKitStreamView.swift
 //  Moonlight Vision
 //
 //  Created by tht7 on 29/12/2024.

@@ -1,3 +1,11 @@
+//
+//  MoonlightVisionApp.swift
+//  Moonlight Vision
+//
+//  Created by Alex Haugland on 1/27/24.
+//  Copyright © 2024 Moonlight Game Streaming Project. All rights reserved.
+//
+
 import SwiftUI
 
 struct MoonlightVisionApp: SwiftUI.App {

@@ -1,5 +1,5 @@
 //
-//  ConnectionManager.swift
+//  ObservableConnectionManager.swift
 //  Moonlight
 //
 //  Created by tht7 on 29/12/2024.

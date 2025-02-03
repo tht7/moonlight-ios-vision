@@ -62,18 +62,68 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         let name2WithoutLocal = name2.hasSuffix(".local") ? String(name2.dropSuffix(".local")) : name2
         return name1WithoutLocal.caseInsensitiveCompare(name2WithoutLocal) == .orderedSame
     }
+    
+    // Add this computed property to filter hosts based on pairState and remove duplicates
+        var hostsWithPairState: [TemporaryHost] {
+            print("--- Filtering hosts for hostsWithPairState ---")
+            let filteredHosts = hosts.filter { host in
+                print("Evaluating host: Name: \(host.name), Pair State: \(host.pairState ?? .unknown)")
 
-    // Add this computed property to filter hosts based on pairState
-    var hostsWithPairState: [TemporaryHost] {
-        return hosts.filter { host in
-            return host.pairState == .paired || host.pairState == .unpaired
+                let isPaired = host.pairState == .paired
+                let isUnpaired = host.pairState == .unpaired
+                // Modified condition to check for both ".local" and ".local." suffix
+                let isRawValueZeroAndLocal = (host.pairState == PairState(rawValue: 0)) && (host.name.hasSuffix(".local") || host.name.hasSuffix(".local."))
+
+                print("  Condition 1 (isPaired): \(isPaired)")
+                print("  Condition 2 (isUnpaired): \(isUnpaired)")
+                print("  Condition 3 (isRawValueZeroAndLocal): \(isRawValueZeroAndLocal)")
+
+                // --- ADD THESE PRINT STATEMENTS HERE ---
+                print("    host.pairState?.rawValue: \(host.pairState.rawValue as Any)")
+                print("    host.name: \"\(host.name)\"") // Print with quotes to see whitespace
+                print("    host.name.trimmingCharacters(in: .whitespacesAndNewlines): \"\(host.name.trimmingCharacters(in: .whitespacesAndNewlines))\"")
+                print("    host.name.hasSuffix(\".local\"): \(host.name.hasSuffix(".local"))") // Explicitly print hasSuffix result
+                print("    (host.pairState == PairState(rawValue: 0)): \((host.pairState == PairState(rawValue: 0)) )") //Explicitly print pairState comparison
+
+
+                let isValid = isPaired || isUnpaired || isRawValueZeroAndLocal
+                if isValid {
+                    print("Host is VALID and will be included.")
+                } else {
+                    print("Host is INVALID and will be excluded.")
+                }
+                return isValid
+            }
+
+            print("--- Filtered hosts (valid hosts - potentially with duplicates): ---") // Updated print statement
+            for host in filteredHosts {
+                print("Valid Host: Name: \(host.name), Pair State: \(host.pairState ?? .unknown)")
+            }
+
+            var uniqueFilteredHosts: [TemporaryHost] = []
+            var seenHostNames = Set<String>()
+
+            print("--- Removing duplicate hosts ---") // Indicate deduplication process
+            for host in filteredHosts {
+                if !seenHostNames.contains(host.name) {
+                    uniqueFilteredHosts.append(host)
+                    seenHostNames.insert(host.name)
+                    print("Added unique host: Name: \(host.name), Pair State: \(host.pairState ?? .unknown)") // Print when a unique host is added
+                } else {
+                    print("Skipping duplicate host: Name: \(host.name), Pair State: \(host.pairState ?? .unknown)") // Print when a duplicate is skipped
+                }
+            }
+
+            print("--- Filtered hosts (valid and unique hosts): ---") // Updated print statement
+            for host in uniqueFilteredHosts {
+                print("Valid Host: Name: \(host.name), Pair State: \(host.pairState ?? .unknown)")
+            }
+            print("--- End of valid and unique hosts output ---") // Updated print statement
+            return uniqueFilteredHosts
         }
-    }
-
-
     func setHosts(newHosts: [TemporaryHost]) {
         print("setHosts - START - Current hosts count: \(hosts.count), New hosts count: \(newHosts.count)")
-        print("setHosts - Old hosts before processing: \(hosts.map { ($0.name, $0.uuid) })")
+        print("setHosts - Old hosts before processing: \(hosts.map { ($0.name, $0.uuid, $0.pairState) })")
 
         var deduplicatedNewHosts: [TemporaryHost] = []
         var seenBaseNames: [String: TemporaryHost] = [:] // Track base names and preferred host
@@ -89,33 +139,33 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
                 let existingHasLocalSuffix = existingHostName.hasSuffix(".local")
 
                 if hasLocalSuffix && !existingHasLocalSuffix {
-                    // Current host has '.local', existing preferred does not. Keep existing.
-                    print("setHosts - Name Deduplication: Keeping existing preferred host '\(existingHostName)' (no '.local') for base name '\(baseName)'. Discarding '\(hostName)'.")
-                } else if !hasLocalSuffix && existingHasLocalSuffix {
-                    // Current host no '.local', existing preferred has '.local'. Replace with current.
-                    print("setHosts - Name Deduplication: Replacing existing preferred host '\(existingHostName)' (with '.local') with preferred host '\(hostName)' (no '.local') for base name '\(baseName)'.")
+                    // Current host has '.local', existing preferred does not. Replace with current.  <- FIXED: Changed "Keep existing" to "Replace with current"
+                    print("setHosts - Name Deduplication: Replacing existing preferred host '\(existingHostName)' (no '.local') with preferred host '\(hostName)' (with '.local') for base name '\(baseName)'.")
                     seenBaseNames[baseName] = host // Update preferred host
+                } else if !hasLocalSuffix && existingHasLocalSuffix {
+                    // Current host no '.local', existing preferred has '.local'. Keep existing. <- FIXED: Changed "Replace with current" to "Keep existing"
+                    print("setHosts - Name Deduplication: Keeping existing preferred host '\(existingHostName)' (with '.local') for base name '\(baseName)'. Discarding '\(hostName)' (no '.local') with pairState: \(host.pairState ?? .unknown).")
                 } else {
                     // No preference difference or both have/don't have '.local'. Keep existing preferred (which is the *later* one in reversed loop).
-                    print("setHosts - Name Deduplication: Duplicate name '\(hostName)' for base name '\(baseName)'. Keeping existing preferred host '\(existingHostName)'. Discarding '\(hostName)'. (No '.local' preference difference)")
+                    print("setHosts - Name Deduplication: Duplicate name '\(hostName)' for base name '\(baseName)'. Keeping existing preferred host '\(existingHostName)' with pairState: \(existingPreferredHost.pairState ?? .unknown). Discarding '\(hostName)' with pairState: \(host.pairState ?? .unknown). (No '.local' preference difference)")
                 }
             } else {
                 // First time seeing this base name
                 seenBaseNames[baseName] = host // Set current host as preferred for this base name
-                print("setHosts - Name Deduplication: First time seeing base name '\(baseName)'. Keeping host '\(hostName)'.")
+                print("setHosts - Name Deduplication: First time seeing base name '\(baseName)'. Keeping host '\(hostName)' with pairState: \(host.pairState ?? .unknown).")
                 deduplicatedNewHosts.append(host) // Add to deduplicated list
             }
         }
         // Reconstruct deduplicatedNewHosts from seenBaseNames, maintaining original order as much as possible
         deduplicatedNewHosts = seenBaseNames.values.sorted { newHosts.firstIndex(of: $0)! < newHosts.firstIndex(of: $1)! }
 
-        print("setHosts - Name-based deduplication complete. Deduplicated count: \(deduplicatedNewHosts.count), Hosts: \(deduplicatedNewHosts.map { ($0.name, $0.uuid) })")
+        print("setHosts - Name-based deduplication complete. Deduplicated count: \(deduplicatedNewHosts.count), Hosts: \(deduplicatedNewHosts.map { ($0.name, $0.uuid, $0.pairState) })")
 
 
         // 2. Merge deduplicatedNewHosts with existing hosts based on NAME (replace or append) - Modified Merge to be Name-Based
         var mergedHosts: [TemporaryHost] = []
         mergedHosts.append(contentsOf: hosts) // Start with existing hosts
-        print("setHosts - Initial mergedHosts (copy of existing hosts): \(mergedHosts.map { ($0.name, $0.uuid) })")
+        print("setHosts - Initial mergedHosts (copy of existing hosts): \(mergedHosts.map { ($0.name, $0.uuid, $0.pairState) })")
 
         print("setHosts - Starting name-based merge process...")
         for newHost in deduplicatedNewHosts {
@@ -125,28 +175,30 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
 
             if let existingIndex = mergedHosts.firstIndex(where: { existingHost in
                 let existingHostName = existingHost.name
-                let existingHostBaseName = existingHostName.hasSuffix(".local") ? String(existingHostName.dropSuffix(".local")) : existingHostName
-                return existingHostBaseName == newHostBaseName
+                let existingHostBaseName_closure = existingHostName.hasSuffix(".local") ? String(existingHostName.dropSuffix(".local")) : existingHostName // Declare inside closure
+                let newHostName_closure = newHost.name // Get newHost.name inside closure
+                let newHostBaseName_closure = newHostName_closure.hasSuffix(".local") ? String(newHostName_closure.dropSuffix(".local")) : newHostName_closure // Calculate newHostBaseName inside closure
+
+                return existingHostBaseName_closure == newHostBaseName_closure
             }) {
-                print("setHosts - Merge: Host with same base name '\(newHostBaseName)' found in mergedHosts at index \(existingIndex). Replacing with: \(newHost.name)")
+                print("setHosts - Merge: Host with same base name '\(newHostBaseName)' found in mergedHosts at index \(existingIndex). Replacing with: \(newHost.name) pairState: \(newHost.pairState ?? .unknown)")
                 mergedHosts[existingIndex] = newHost // Replace existing host
             } else {
-                print("setHosts - Merge: New host base name '\(newHostBaseName)' not found in mergedHosts. Appending: \(newHost.name)")
+                print("setHosts - Merge: New host base name '\(newHostBaseName)' not found in mergedHosts. Appending: \(newHost.name) pairState: \(newHost.pairState ?? .unknown)")
                 mergedHosts.append(newHost) // Append new host
             }
         }
-        print("setHosts - Name-based merge process complete. Final mergedHosts count: \(mergedHosts.count), Hosts: \(mergedHosts.map { ($0.name, $0.uuid) })")
+        print("setHosts - Name-based merge process complete. Final mergedHosts count: \(mergedHosts.count), Hosts: \(mergedHosts.map { ($0.name, $0.uuid, $0.pairState) })")
 
 
         // 3. Update the hosts array
         hosts.removeAll() // Clear the old hosts array
         hosts.append(contentsOf: mergedHosts) // Set hosts to the merged and deduplicated list
-        print("setHosts - hosts array updated with mergedHosts. Final hosts count: \(hosts.count), Hosts: \(hosts.map { ($0.name, $0.uuid) })")
+        print("setHosts - hosts array updated with mergedHosts. Final hosts count: \(hosts.count), Hosts: \(hosts.map { ($0.name, $0.uuid, $0.pairState) })")
         print("setHosts - END")
-        stopRefresh()
 
     }
-
+    
     func addHost(newHost: TemporaryHost) {
         print("addHost - START - Attempting to add host: \(newHost.name), UUID: \(newHost.uuid), Address: \(newHost.address), Current hosts count: \(hosts.count)")
 
