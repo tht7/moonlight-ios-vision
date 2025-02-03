@@ -1,4 +1,4 @@
-//
+//  Moonlight-Bridging-Header
 //  Use this file to import your target's public headers that you would like to expose to Swift.
 //
 
@@ -22,6 +22,7 @@
 #import "ConnectionCallbacks.h"
 #import "Limelight.h"
 #import "HDRParsingUtils.h"
+#import "KeyboardSupport.h"
 
 #import "MoonlightApp+CoreDataClass.h"
 #import "MoonlightHost+CoreDataClass.h"

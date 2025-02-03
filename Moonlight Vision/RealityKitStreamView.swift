@@ -188,7 +188,7 @@ struct RealityKitStreamView: View {
                 _streamMan = nil
                 controllerSupport?.cleanup()
                 openWindow(id: "mainView")
-            @unknown default:
+            @unknown default: break
                 //print("unknown default")
             }
         }

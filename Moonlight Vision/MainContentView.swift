@@ -3,7 +3,7 @@
 //  Moonlight Vision
 //
 //  Created by Alex Haugland on 1/22/24.
-//  Copyright © 2024 Moonlight Game Streaming Project. All rights reserved.
+//  Copyright © 2024 Moonlight Game Streaming Project.
 //
 
 
@@ -19,7 +19,7 @@ struct MainContentView: View {
     @State private var hostToDelete: TemporaryHost?
     @State private var newHostIp = ""
     @State private var dimPassthrough = true
-
+    @State private var isRefreshingDiscovery = false // State to track refresh status
 
 
     var body: some View {
@@ -55,10 +55,20 @@ struct MainContentView: View {
                     .navigationTitle("Computers") // Keep simple navigation title
                     // REMOVE the VStack navigationTitle we added before
 
-                    Text("To refresh automatic network discovery, go to settings and come back here.") // Text at the bottom
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .padding() // Add some bottom padding for visual spacing
+                    Button { // Make the Text a Button
+                        isRefreshingDiscovery.toggle()
+                        if isRefreshingDiscovery {
+                            viewModel.beginRefresh()
+                        } else {
+                            viewModel.stopRefresh()
+                        }
+                    } label: {
+                        Text(isRefreshingDiscovery ? "Click here to Stop network discovery, or if things are unresponsive" : "Click here to scans for Hosts") // Conditional Text
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    .padding() // Add some bottom padding for visual spacing
+                    .buttonStyle(.plain) // Remove button styling to make it look like text
                 }
                 .toolbar { // Keep the toolbar as is for now
                     ToolbarItem(placement: .primaryAction) {
@@ -105,16 +115,20 @@ struct MainContentView: View {
                     name: UIApplication.didBecomeActiveNotification,
                     object: nil
                 )
-                viewModel.beginRefresh()
+                //if !isRefreshingDiscovery { // Only begin refresh if not already toggled on
+                //    viewModel.beginRefresh()
+                //}
             }.onDisappear {
-                viewModel.stopRefresh()
+                //if !isRefreshingDiscovery { // Only stop refresh if not toggled on and still running
+                    viewModel.stopRefresh()
+                //}
                 NotificationCenter.default.removeObserver(self)
             }
 
             SettingsView(settings: $viewModel.streamSettings).tabItem {
                 Label("Settings", systemImage: "gear")
             }
-            
+
             UpdatesView().tabItem {
                 Label("Changelog", systemImage: "info.circle.fill")
             }

@@ -15,36 +15,102 @@ struct UIKitStreamView: View {
         _UIKitStreamView(streamConfig: $streamConfig)
             .ornament(attachmentAnchor: .scene(.top), contentAlignment: .bottom) {
                 StreamControls(horizontal: true, streamConfig: $streamConfig) {
-                    Button {
-                        applyAspectRatioLock(streamConfig: streamConfig) // Call aspect ratio lock function
-                    } label: {
-                        Label {
-                            Text("Fix Aspect Ratio")
-                        } icon: {
-                            Image(systemName: "aspectratio")
-                        }
-                    }
+                    _UIKitStreamViewWindowButton(streamConfig: $streamConfig, controllerReference: _UIKitStreamView.controllerReference) // Pass the reference
                 }
             }
     }
 }
 
+struct _UIKitStreamViewWindowButton: View {
+    @Binding var streamConfig: StreamConfiguration
+    @State private var currentWindow: UIWindow? = nil // State to hold the window reference
+    let controllerReference: Reference<StreamFrameViewController> // Receive the reference
+
+    var body: some View {
+        Button {
+            if let window = currentWindow {
+                applyAspectRatioLock(streamConfig: streamConfig, targetWindow: window) // Pass the window
+            } else {
+                print("Error: No window reference available to apply aspect ratio lock.")
+                // Optionally provide user feedback here, e.g., an alert
+            }
+        } label: {
+            Label {
+                Text("Fix Aspect Ratio")
+            } icon: {
+                Image(systemName: "aspectratio")
+            }
+        }
+        .onAppear {
+            // Find the window when the button appears (or when the view is updated)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { // Small delay
+                findWindow()
+            }
+        }
+        .onChange(of: streamConfig) { _ in // Update if streamConfig changes (though window likely stays the same)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { // Small delay
+                findWindow()
+            }
+        }
+    }
+
+    private func findWindow() {
+        print("Attempting to find window...")
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            print("Warning: Could not get the first connected scene.")
+            return
+        }
+
+        print("Connected scenes count: \(UIApplication.shared.connectedScenes.count)")
+        print("Window scene windows count: \(scene.windows.count)")
+
+        // More robust approach: Try to find the window from the StreamFrameViewController's view
+        if let streamViewController = controllerReference.object { // Access the StreamFrameViewController through the reference
+            if let streamView = streamViewController.view {
+                var viewToFindWindow: UIView? = streamView
+                while viewToFindWindow != nil {
+                    if let window = viewToFindWindow?.window {
+                        print("Found window by traversing view hierarchy: \(window)")
+                        currentWindow = window
+                        return
+                    }
+                    viewToFindWindow = viewToFindWindow?.superview
+                }
+            } else {
+                print("Warning: streamViewController.view is nil")
+            }
+        } else {
+            print("Warning: controllerReference.object is nil")
+        }
+
+
+        print("Warning: Could not find window associated with StreamFrameViewController using view hierarchy traversal.")
+        currentWindow = nil // Ensure currentWindow is nil if not found.
+        // Optionally provide user feedback here if window is not found
+    }
+}
+
+
 struct _UIKitStreamView: UIViewControllerRepresentable {
     typealias UIViewControllerType = StreamFrameViewController
 
     @Binding var streamConfig: StreamConfiguration
-    let controllerReference = Reference<UIViewControllerType>()
+    static let controllerReference = Reference<UIViewControllerType>() // Make it static
+
+    static var reference: Reference<UIViewControllerType> { // Provide access to the reference
+        return controllerReference
+    }
 
     func makeUIViewController(context: Context) -> UIViewControllerType {
         let streamView = StreamFrameViewController()
         streamView.streamConfig = streamConfig
-        controllerReference.object = streamView
+        _UIKitStreamView.controllerReference.object = streamView // Use the static reference
         return streamView
     }
 
     func updateUIViewController(_ viewController: UIViewControllerType, context: Context) {
         viewController.streamConfig = streamConfig // Ensure streamConfig updates
-        controllerReference.object = viewController
+        _UIKitStreamView.controllerReference.object = viewController // Update in case view controller instance changes (though unlikely in this setup)
     }
 }
 
@@ -54,9 +120,9 @@ class Reference<T: AnyObject> {
 
 // MARK: - Helper Functions
 
-func applyAspectRatioLock(streamConfig: StreamConfiguration) {
-    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
-        //print("Could not get window scene to apply aspect ratio lock.")
+func applyAspectRatioLock(streamConfig: StreamConfiguration, targetWindow: UIWindow?) {
+    guard let window = targetWindow else {
+        print("Error: No target window provided to apply aspect ratio lock.")
         return
     }
 
@@ -64,7 +130,7 @@ func applyAspectRatioLock(streamConfig: StreamConfiguration) {
     let streamHeight = CGFloat(streamConfig.height)
     let streamAspectRatio = streamWidth / streamHeight
 
-    //print("Applying Aspect Ratio Lock - Stream Width: \(streamWidth), Stream Height: \(streamHeight), Stream AR: \(streamAspectRatio)")
+    print("Applying Aspect Ratio Lock - Stream Width: \(streamWidth), Stream Height: \(streamHeight), Stream AR: \(streamAspectRatio)")
 
     let maxWidth: CGFloat = 2000 // Increased maxWidth for potentially larger screens
     var desiredSize = CGSize.zero
@@ -81,6 +147,11 @@ func applyAspectRatioLock(streamConfig: StreamConfiguration) {
         }
     }
 
+    guard let windowScene = window.windowScene else {
+        print("Error: Could not get window scene from target window.")
+        return
+    }
+
     let geometryRequest = UIWindowScene.GeometryPreferences.Vision(
         size: desiredSize,
         resizingRestrictions: .uniform
@@ -88,46 +159,40 @@ func applyAspectRatioLock(streamConfig: StreamConfiguration) {
 
     //print("Applying Geometry Request for Aspect Ratio Lock.")
 
-    // Apply to the first window of the scene, which is typically the main window.
-    if let window = windowScene.windows.first {
-        //print("Applying to the first window in the scene.")
+    // Apply to the provided window.
+    //print("Applying to the provided window.")
 
-        //print("Window Information Before Request:")
-        let windowBounds = window.bounds
-        let windowWidth = windowBounds.width
-        let windowHeight = windowBounds.height
-        let windowAspectRatio = windowWidth / windowHeight
+    //print("Window Information Before Request:")
+    let windowBounds = window.bounds
+    let windowWidth = windowBounds.width
+    let windowHeight = windowBounds.height
+    let windowAspectRatio = windowWidth / windowHeight
+    let identifier = window.accessibilityIdentifier ?? "nil"
+    let rootViewControllerClassName = String(describing: window.rootViewController?.classForCoder)
+
+    //print("\nWindow Information (Before Geometry Request):")
+    //print("Window Width: \(windowWidth)")
+    //print("Window Height: \(windowHeight)")
+    //print("Window Aspect Ratio: \(windowAspectRatio)")
+    //print("Window Accessibility Identifier: \(identifier)")
+    //print("Window Root View Controller Class: \(rootViewControllerClassName)")
+
+    windowScene.requestGeometryUpdate(geometryRequest)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { // Short delay for logging
+        //print("\nWindow Information After Request:")
+        let updatedBounds = window.bounds
+        let updatedWidth = updatedBounds.width
+        let updatedHeight = updatedBounds.height
+        let updatedAspectRatio = updatedWidth / updatedHeight
         let identifier = window.accessibilityIdentifier ?? "nil"
         let rootViewControllerClassName = String(describing: window.rootViewController?.classForCoder)
 
-        //print("\nWindow Information (Before Geometry Request):")
-        //print("Window Width: \(windowWidth)")
-        //print("Window Height: \(windowHeight)")
-        //print("Window Aspect Ratio: \(windowAspectRatio)")
+        //print("\nWindow Size (After Delay):")
+        //print("Updated Window Width: \(updatedWidth)")
+        //print("Updated Window Height: \(updatedHeight)")
+        //print("Updated Aspect Ratio: \(updatedAspectRatio)")
         //print("Window Accessibility Identifier: \(identifier)")
         //print("Window Root View Controller Class: \(rootViewControllerClassName)")
-
-        windowScene.requestGeometryUpdate(geometryRequest)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { // Short delay for logging
-            //print("\nWindow Information After Request:")
-            let updatedBounds = window.bounds
-            let updatedWidth = updatedBounds.width
-            let updatedHeight = updatedBounds.height
-            let updatedAspectRatio = updatedWidth / updatedHeight
-            let identifier = window.accessibilityIdentifier ?? "nil"
-            let rootViewControllerClassName = String(describing: window.rootViewController?.classForCoder)
-
-            //print("\nWindow Size (After Delay):")
-            //print("Updated Window Width: \(updatedWidth)")
-            //print("Updated Window Height: \(updatedHeight)")
-            //print("Updated Aspect Ratio: \(updatedAspectRatio)")
-            //print("Window Accessibility Identifier: \(identifier)")
-            //print("Window Root View Controller Class: \(rootViewControllerClassName)")
-        }
-
-
-    } else {
-        //print("No window found in the scene to apply aspect ratio lock.")
     }
 }
