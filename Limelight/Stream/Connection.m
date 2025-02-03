@@ -8,6 +8,7 @@
 
 #import "Connection.h"
 #import "Utils.h"
+#import "CoreAudioHelpers.h"
 
 #import <VideoToolbox/VideoToolbox.h>
 #import <AVFAudio/AVAudioSession.h>
@@ -19,6 +20,10 @@
 
 #include "Limelight.h"
 #include "opus_multistream.h"
+
+#define AUDIOUNIT_DECODER 0
+#define AUDIOQUEUE_DECODER 0
+#define AVSB_DECODER 1
 
 @implementation Connection {
     SERVER_INFORMATION _serverInfo;
@@ -40,19 +45,17 @@ static int activeVideoFormat;
 static video_stats_t currentVideoStats;
 static video_stats_t lastVideoStats;
 static NSLock* videoStatsLock;
+static VideoDecoderRenderer* renderer;
 
-static SDL_AudioDeviceID audioDevice;
-static OPUS_MULTISTREAM_CONFIGURATION audioConfig;
-static void* audioBuffer;
-static void* rawAudioBuffer;
-static int audioFrameSize;
-
-
-void setVolume(int newVol) {
-    volume = newVol;
-}
-
-static id<AnyVideoDecoderRenderer> __strong renderer;
+static OPUS_MULTISTREAM_CONFIGURATION opusConfig;
+static bool audioIsStopping = false;
+#if AUDIOUNIT_DECODER
+static CoreAudioRenderer* audioRenderer;
+#elif AUDIOQUEUE_DECODER
+static AQRenderer* aqRenderer;
+#elif AVSB_DECODER
+static AVSBRenderer* avsbRenderer;
+#endif
 
 int DrDecoderSetup(int videoFormat, int width, int height, int redrawRate, void* context, int drFlags)
 {
@@ -87,6 +90,17 @@ void DrStop(void)
     // No stats yet
     [videoStatsLock unlock];
     return NO;
+}
+
+-(NSString *)getAudioStatsString
+{
+#if AUDIOUNIT_DECODER
+    return [audioRenderer getAudioStatsString];
+#elif AVSB_DECODER
+    return [avsbRenderer getAudioStatsString];
+#endif
+
+    return NULL;
 }
 
 -(NSString*) getActiveCodecName
@@ -196,121 +210,298 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit)
                              decodeUnit:decodeUnit];
 }
 
-int ArInit(int audioConfiguration, POPUS_MULTISTREAM_CONFIGURATION opusConfig, void* context, int flags)
-{
+#if AUDIOUNIT_DECODER
+int ArInit(int audioConfiguration, POPUS_MULTISTREAM_CONFIGURATION inOpusConfig, void* context, int flags) {
     int err;
-    SDL_AudioSpec want, have;
-    
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
-        Log(LOG_E, @"Failed to initialize audio subsystem: %s\n", SDL_GetError());
+    audioRenderer = [[CoreAudioRenderer alloc] initWithConfig:inOpusConfig];
+    if (!audioRenderer) {
+        Log(LOG_E, @"Failed to initialize audio subsystem\n");
         return -1;
     }
-        
-    SDL_zero(want);
-    want.freq = opusConfig->sampleRate;
-    want.format = AUDIO_S16;
-    want.channels = opusConfig->channelCount;
-    want.samples = opusConfig->samplesPerFrame;
 
-    audioDevice = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (audioDevice == 0) {
-        Log(LOG_E, @"Failed to open audio device: %s\n", SDL_GetError());
-        ArCleanup();
-        return -1;
-    }
-    
-    audioConfig = *opusConfig;
-    audioFrameSize = opusConfig->samplesPerFrame * sizeof(short) * opusConfig->channelCount;
-    audioBuffer = SDL_malloc(audioFrameSize);
-    rawAudioBuffer = SDL_malloc(audioFrameSize);
-    if (audioBuffer == NULL || rawAudioBuffer == NULL) {
-        Log(LOG_E, @"Failed to allocate audio frame buffer");
-        ArCleanup();
-        return -1;
-    }
-    
-    opusDecoder = opus_multistream_decoder_create(opusConfig->sampleRate,
-                                                  opusConfig->channelCount,
-                                                  opusConfig->streams,
-                                                  opusConfig->coupledStreams,
-                                                  opusConfig->mapping,
+    opusConfig = *inOpusConfig;
+    opusDecoder = opus_multistream_decoder_create(opusConfig.sampleRate,
+                                                  opusConfig.channelCount,
+                                                  opusConfig.streams,
+                                                  opusConfig.coupledStreams,
+                                                  opusConfig.mapping,
                                                   &err);
+
     if (opusDecoder == NULL) {
         Log(LOG_E, @"Failed to create Opus decoder");
         ArCleanup();
         return -1;
     }
-    
-    // Start playback
-    SDL_PauseAudioDevice(audioDevice, 0);
-    
-    // Disable lowering volume of other audio streams (SDL sets AVAudioSessionCategoryOptionDuckOthers by default)
-    [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
-    
+
     return 0;
 }
 
-void ArCleanup(void)
-{
+void ArStart(void) {
+    audioIsStopping = false;
+    [audioRenderer start];
+}
+
+void ArStop(void) {
+    [audioRenderer stop];
+    audioIsStopping = true;
+}
+
+void ArCleanup(void) {
     if (opusDecoder != NULL) {
         opus_multistream_decoder_destroy(opusDecoder);
         opusDecoder = NULL;
     }
-    
-    if (audioDevice != 0) {
-        SDL_CloseAudioDevice(audioDevice);
-        audioDevice = 0;
-    }
-    
-    if (audioBuffer != NULL) {
-        SDL_free(audioBuffer);
-        audioBuffer = NULL;
-    }
-    
-    if (rawAudioBuffer != NULL) {
-        SDL_free(rawAudioBuffer);
-        rawAudioBuffer = NULL;
-    }
-    
-    SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
-void ArDecodeAndPlaySample(char* sampleData, int sampleLength)
-{
-    int decodeLen;
-    
-    // Don't queue if there's already more than 30 ms of audio data waiting
-    // in Moonlight's audio queue.
-    if (LiGetPendingAudioDuration() > 30) {
+void ArDecodeAndPlaySample(char* sampleData, int sampleLength) {
+    if (audioIsStopping)
+        return;
+
+    CFTimeInterval decodeStartTime = CACurrentMediaTime();
+
+    int sampleSize = sizeof(float);
+    int frameSize = sampleSize * opusConfig.channelCount;
+    int desiredBufferSize = frameSize * opusConfig.samplesPerFrame;
+    void* buffer = [audioRenderer getAudioBuffer:&desiredBufferSize];
+
+    int samplesDecoded = opus_multistream_decode_float(opusDecoder, (unsigned char*)sampleData, sampleLength,
+                                                   (float*)buffer, desiredBufferSize / frameSize, 0);
+
+    if (samplesDecoded < 0) {
+        if (samplesDecoded != OPUS_BUFFER_TOO_SMALL) {
+            // OPUS_BUFFER_TOO_SMALL (-2) is a normal situation when sometimes we get Opus packets that are all 0's
+            Log(LOG_E, @"opus decode error: %d", samplesDecoded);
+        }
         return;
     }
-    
-    decodeLen = opus_multistream_decode(opusDecoder, (unsigned char *)sampleData, sampleLength,
-                                        (short*)rawAudioBuffer, audioConfig.samplesPerFrame, 0);
-    if (decodeLen > 0) {
-        // Provide backpressure on the queue to ensure too many frames don't build up
-        // in SDL's audio queue.
-        while (SDL_GetQueuedAudioSize(audioDevice) / audioFrameSize > 10) {
-            SDL_Delay(1);
-        }
-        if (volume == 127) {
-            if (SDL_QueueAudio(audioDevice,
-                               rawAudioBuffer,
-                               sizeof(short) * decodeLen * audioConfig.channelCount) < 0) {
-                Log(LOG_E, @"Failed to queue audio sample: %s\n", SDL_GetError());
-            }
-            return;
-        }
-        SDL_memset(audioBuffer, 0, audioFrameSize);
-        SDL_MixAudioFormat(audioBuffer, rawAudioBuffer, AUDIO_S16, sizeof(short) * decodeLen * audioConfig.channelCount, volume);
-        
-        if (SDL_QueueAudio(audioDevice,
-                           audioBuffer,
-                           sizeof(short) * decodeLen * audioConfig.channelCount) < 0) {
-            Log(LOG_E, @"Failed to queue audio sample: %s\n", SDL_GetError());
-        }
+
+    static int lastBufferSize = 0;
+    if (desiredBufferSize != lastBufferSize) {
+        // light logging only if changed
+        Log(LOG_I, @"opus decoder: %d samples, %d opus bytes, %d PCM bytes",
+            samplesDecoded, sampleLength, desiredBufferSize);
+        lastBufferSize = desiredBufferSize;
+    }
+
+    // Update desiredSize with the number of bytes actually populated by the decoding operation
+    if (samplesDecoded > 0) {
+        desiredBufferSize = frameSize * samplesDecoded;
+    }
+    else {
+        desiredBufferSize = 0;
+    }
+
+    if (![audioRenderer submitAudio:desiredBufferSize opusBytes:sampleLength decodeStartTime:decodeStartTime]) {
+        // something changed or broke, reinit the audio
+        Log(LOG_I, @"CoreAudioRenderer needs to reinitialize...");
+        ArCleanup();
+        ArInit(-1, &opusConfig, NULL, -1); // XXX we don't use the other params but this is still gross
     }
 }
+#endif
+
+#if AUDIOQUEUE_DECODER
+/// AudioQueue implementation
+/// Very close to the original pre-SDL implementation, I am mostly doing it to learn the API.
+
+int AudioQueueArInit(int audioConfiguration, POPUS_MULTISTREAM_CONFIGURATION inOpusConfig, void* context, int flags) {
+    int err;
+    opusConfig = *inOpusConfig;
+    opusDecoder = opus_multistream_decoder_create(opusConfig.sampleRate,
+                                                  opusConfig.channelCount,
+                                                  opusConfig.streams,
+                                                  opusConfig.coupledStreams,
+                                                  opusConfig.mapping,
+                                                  &err);
+
+    if (opusDecoder == NULL) {
+        Log(LOG_E, @"Failed to create Opus decoder");
+        AudioQueueArCleanup();
+        return -1;
+    }
+
+    aqRenderer = [[AQRenderer alloc] initWithConfig:inOpusConfig];
+    if (!aqRenderer) {
+        Log(LOG_E, @"Failed to initialize AQRenderer\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+void AudioQueueArStart(void) {
+    audioIsStopping = false;
+    [aqRenderer start];
+}
+
+void AudioQueueArStop(void) {
+    [aqRenderer stop];
+    audioIsStopping = true;
+}
+
+void AudioQueueArCleanup(void) {
+    if (opusDecoder != NULL) {
+        opus_multistream_decoder_destroy(opusDecoder);
+        opusDecoder = NULL;
+    }
+}
+
+void AudioQueueArDecodeAndPlaySample(char* sampleData, int sampleLength) {
+    if (audioIsStopping)
+        return;
+
+    int sampleSize = sizeof(float);
+    int frameSize = sampleSize * opusConfig.channelCount;
+    int desiredBufferSize = frameSize * opusConfig.samplesPerFrame;
+    void* buffer = [aqRenderer getAudioBuffer:&desiredBufferSize];
+
+    int samplesDecoded = opus_multistream_decode_float(opusDecoder, (unsigned char*)sampleData, sampleLength,
+                                                   (float*)buffer, (int)(desiredBufferSize * 1.0 / frameSize), 0);
+
+    if (samplesDecoded < 0) {
+        Log(LOG_E, @"opus decode error: %d", samplesDecoded);
+        return;
+    }
+
+    static int lastBufferSize = 0;
+    if (desiredBufferSize != lastBufferSize) {
+        // light logging only if changed
+        Log(LOG_I, @"opus decoder: %d samples, %d opus bytes, %d PCM bytes",
+            samplesDecoded, sampleLength, desiredBufferSize);
+        lastBufferSize = desiredBufferSize;
+    }
+
+    // Update desiredSize with the number of bytes actually populated by the decoding operation
+    int bytesDecoded = 0;
+    if (samplesDecoded > 0) {
+        bytesDecoded = frameSize * samplesDecoded;
+    }
+
+    if (![aqRenderer submitAudio:bytesDecoded]) {
+        // something changed or broke, reinit the audio
+        Log(LOG_I, @"AQR needs to reinitialize...");
+        AudioQueueArCleanup();
+        AudioQueueArInit(-1, &opusConfig, NULL, -1); // XXX we don't use the other params but this is still gross
+    }
+}
+#endif
+
+#if AVSB_DECODER
+/// AVSampleBufferAudioRenderer implementation
+/// The easiest way to play spatial audio, but may struggle to meet our low latency requirements
+
+int AVSBArInit(int audioConfiguration, POPUS_MULTISTREAM_CONFIGURATION inOpusConfig, void* context, int flags) {
+    int err;
+    opusConfig = *inOpusConfig;
+    opusDecoder = opus_multistream_decoder_create(opusConfig.sampleRate,
+                                                  opusConfig.channelCount,
+                                                  opusConfig.streams,
+                                                  opusConfig.coupledStreams,
+                                                  opusConfig.mapping,
+                                                  &err);
+
+    if (opusDecoder == NULL) {
+        Log(LOG_E, @"Failed to create Opus decoder");
+        AVSBArCleanup();
+        return -1;
+    }
+
+    avsbRenderer = [[AVSBRenderer alloc] initWithConfig:inOpusConfig];
+    if (!avsbRenderer) {
+        Log(LOG_E, @"Failed to initialize AVSBRenderer\n");
+        AVSBArCleanup();
+        return -1;
+    }
+
+    return 0;
+}
+
+void AVSBArStart(void) {
+    audioIsStopping = false;
+    [avsbRenderer start];
+}
+
+void AVSBArStop(void) {
+    [avsbRenderer stop];
+    audioIsStopping = true;
+}
+
+void AVSBArCleanup(void) {
+    if (opusDecoder != NULL) {
+        opus_multistream_decoder_destroy(opusDecoder);
+        opusDecoder = NULL;
+    }
+    avsbRenderer = NULL;
+}
+
+static inline void addPCMHeader(PCMHeader *header, uint32_t pts) {
+    strncpy(header->identifier, HEADER_IDENTIFIER, HEADER_IDENTIFIER_SIZE);
+    header->pts = pts;
+    header->decodeStartTimeNanos = (uint64_t)(CACurrentMediaTime() * 1e9);
+}
+
+void AVSBArDecodeWithTimestamp(char* sampleData, int sampleLength, uint32_t pts) {
+    if (audioIsStopping)
+        return;
+
+    // drop data before decoding if we've got at least 30ms of backlog
+    int pendingAudio = LiGetPendingAudioDuration();
+    if (pendingAudio > 100) {
+        DEBUG_TRACE(@"AVSB skip-ahead, pending audio %d ms. Dropping %d Opus bytes @ %d", pendingAudio, sampleLength, pts);
+        return;
+    }
+
+    // This getAudioBuffer works differently to the others, and only returns bytesFree in buffer
+    int bytesFree = 0;
+    char* buffer = [avsbRenderer getAudioBuffer:&bytesFree];
+
+    int bytesNeeded = opusConfig.samplesPerFrame * opusConfig.channelCount * 4;
+    if (bytesFree < sizeof(PCMHeader) + bytesNeeded) {
+        // buffer doesn't have enough space for our header + one full frame
+        Log(LOG_E, @"not enough space in buffer for decoded audio: bytesFree %d, bytesNeeded %d",
+            bytesFree, sizeof(PCMHeader) + bytesNeeded);
+        return;
+
+        // XXX this should really block and wait for the buffer space
+    }
+
+    // encode the decodeStartTime and pts into a 16 byte "header" before the PCM
+    // The code that reads this from the ring buffer is disconnected from this writer,
+    // so this is the easiest way to add some metadata about the audio packet.
+    addPCMHeader((PCMHeader *)buffer, pts);
+    buffer += sizeof(PCMHeader);
+
+    int samplesFree = bytesFree / (opusConfig.channelCount * 4);
+    int samplesDecoded = opus_multistream_decode_float(opusDecoder, (unsigned char*)sampleData, sampleLength,
+                                                   (float*)buffer, samplesFree, 0);
+
+    if (samplesDecoded < 0) {
+        Log(LOG_E, @"opus decode error: %d, opusBytes %d, bytesFree %d, samplesFree %d",
+            samplesDecoded, sampleLength, bytesFree, samplesFree);
+        return;
+    }
+
+    int bytesDecoded = samplesDecoded * opusConfig.channelCount * 4;
+
+    static int lastSamplesDecoded = 0;
+    if (samplesDecoded != lastSamplesDecoded) {
+        // light logging only if changed
+        Log(LOG_I, @"opus decoded: %d samples, %d opus bytes, %d PCM bytes",
+            samplesDecoded, sampleLength, bytesDecoded);
+        lastSamplesDecoded = samplesDecoded;
+    }
+
+    // we also wrote PCMHeader to the buffer
+    bytesDecoded += sizeof(PCMHeader);
+
+    if (![avsbRenderer submitAudio:bytesDecoded opusBytes:sampleLength]) {
+        // something changed or broke, reinit the audio
+        Log(LOG_I, @"AVSB needs to reinitialize...");
+        AVSBArCleanup();
+        AVSBArInit(-1, &opusConfig, NULL, -1); // XXX we don't use the other params but this is still gross
+    }
+}
+#endif
 
 void ClStageStarting(int stage)
 {
@@ -450,14 +641,8 @@ void ClSetControllerLED(uint16_t controllerNumber, uint8_t r, uint8_t g, uint8_t
     
     // Since we require iOS 12 or above, we're guaranteed to be running
     // on a 64-bit device with ARMv8 crypto instructions, so we don't
-    // need to check for that here. Instead, we'll just check for more
-    // than 2 cores, which eliminates the early dual-core CPUs (A7-A9).
-    if (NSProcessInfo.processInfo.processorCount > 2) {
-        _streamConfig.encryptionFlags = ENCFLG_ALL;
-    }
-    else {
-        _streamConfig.encryptionFlags = ENCFLG_AUDIO;
-    }
+    // need to check for that here.
+    _streamConfig.encryptionFlags = ENCFLG_ALL;
     
     if ([Utils isActiveNetworkVPN]) {
         // Force remote streaming mode when a VPN is connected
@@ -484,10 +669,27 @@ void ClSetControllerLED(uint16_t controllerNumber, uint8_t r, uint8_t g, uint8_t
                                 CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1;
 
     LiInitializeAudioCallbacks(&_arCallbacks);
+
+#if AUDIOUNIT_DECODER
     _arCallbacks.init = ArInit;
+    _arCallbacks.start = ArStart;
+    _arCallbacks.stop = ArStop;
     _arCallbacks.cleanup = ArCleanup;
     _arCallbacks.decodeAndPlaySample = ArDecodeAndPlaySample;
     _arCallbacks.capabilities = CAPABILITY_SUPPORTS_ARBITRARY_AUDIO_DURATION;
+#elif AUDIOQUEUE_DECODER
+    _arCallbacks.init = AudioQueueArInit;
+    _arCallbacks.cleanup = AudioQueueArCleanup;
+    _arCallbacks.decodeAndPlaySample = AudioQueueArDecodeAndPlaySample;
+    _arCallbacks.capabilities = CAPABILITY_DIRECT_SUBMIT | CAPABILITY_SUPPORTS_ARBITRARY_AUDIO_DURATION;
+#elif AVSB_DECODER
+    _arCallbacks.init = AVSBArInit;
+    _arCallbacks.start = AVSBArStart;
+    _arCallbacks.stop = AVSBArStop;
+    _arCallbacks.cleanup = AVSBArCleanup;
+    _arCallbacks.decodeWithTimestamp = AVSBArDecodeWithTimestamp;
+    _arCallbacks.capabilities = CAPABILITY_SUPPORTS_ARBITRARY_AUDIO_DURATION | CAPABILITY_USES_RTP_TIMESTAMP;
+#endif
 
     LiInitializeConnectionCallbacks(&_clCallbacks);
     _clCallbacks.stageStarting = ClStageStarting;

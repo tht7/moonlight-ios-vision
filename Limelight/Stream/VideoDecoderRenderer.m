@@ -8,6 +8,8 @@
 
 #import "VideoDecoderRenderer.h"
 #import "StreamView.h"
+#import "AVSBRenderer.h"
+#import "AVSync.h"
 #import "NSData+Conversion.h"
 
 #include <libavcodec/avcodec.h>
@@ -36,7 +38,7 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     
     CADisplayLink* _displayLink;
     BOOL framePacing;
-    
+
     CGRect _lastKnownSize;
 }
 
@@ -65,7 +67,11 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     // Hide the layer until we get an IDR frame. This ensures we
     // can see the loading progress label as the stream is starting.
     displayLayer.hidden = YES;
-    
+
+    // XXX Not sure if this does anything, due to the way we display frames
+    AVSampleBufferRenderSynchronizer *renderSynchronizer = [AVSBRenderer getRenderSynchronizer];
+    [renderSynchronizer addRenderer:displayLayer];
+
     if (oldLayer != nil) {
         // Switch out the old display layer with the new one
         [_view.layer replaceSublayer:oldLayer with:displayLayer];
@@ -78,9 +84,9 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
         CFRelease(formatDesc);
         formatDesc = nil;
     }
-    
+
     [_view.widthAnchor constraintEqualToAnchor:_view.heightAnchor multiplier:_streamAspectRatio].active = true;
-    
+
     _lastKnownSize = _view.bounds;
 }
 
@@ -128,7 +134,6 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
     
     while (LiPollNextVideoFrame(&handle, &du)) {
         LiCompleteVideoFrame(handle, DrSubmitDecodeUnit(du));
-        
         if (framePacing) {
             // Calculate the actual display refresh rate
             double displayRefreshRate = 1 / (_displayLink.targetTimestamp - _displayLink.timestamp);
@@ -446,12 +451,12 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
             size_t parameterSetSizes[parameterSetCount];
             Log(LOG_I, @"Constructing new H264 format description");
             Log(LOG_I, @"parameterSetBuffers count: %i", [parameterSetBuffers count]);
-            
+
             for (int i = 0; i < parameterSetCount; i++) {
                 NSData* parameterSet = parameterSetBuffers[i];
                 parameterSetPointers[i] = parameterSet.bytes;
                 parameterSetSizes[i] = parameterSet.length;
-                
+
                 Log(LOG_I, @"Parameter Set %i:", i);
                 Log(LOG_I, @" Data (hex): %@:", [parameterSet hexadecimalString]);
                 Log(LOG_I, @" Size: %i", parameterSet.length);
@@ -609,6 +614,9 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
         CFRelease(frameBlockBuffer);
         return DR_NEED_IDR;
     }
+
+    // keep track of the most recently submitted/rendered timestamp so we can track A/V sync
+    [[AVSync sharedInstance] setVideoPts:du->presentationTimeMs];
 
     // Enqueue the next frame
     [self->displayLayer enqueueSampleBuffer:sampleBuffer];

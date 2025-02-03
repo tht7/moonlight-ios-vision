@@ -1,0 +1,18 @@
+#pragma once
+
+#include <Limelight.h>
+
+@interface AQRenderer : NSObject
+
+- (instancetype)initWithConfig:(const OPUS_MULTISTREAM_CONFIGURATION*)opusConfig;
+
+- (void)start;
+- (void)stop;
+- (void *)getAudioBuffer:(int *)size;
+- (bool)submitAudio:(int)bytesWritten;
+- (void)handleRouteChange:(NSNotification *)notification;
+- (void)handleRenderingCapabilitiesChange:(NSNotification *)notification;
+- (void)handleRenderingModeChange:(NSNotification *)notification;
+
+@end
+
