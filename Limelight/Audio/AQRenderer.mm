@@ -360,14 +360,14 @@ void FillOutputBuffer(void *userData,
         // this callback can indicate available channel layouts when using AirPlay
         // Perhaps not very useful to us but interesting to catch anyway
         AVAudioSession *session = [AVAudioSession sharedInstance];
-        NSArray<AVAudioChannelLayout *> *layouts = [session supportedOutputChannelLayouts];
+//        NSArray<AVAudioChannelLayout *> *layouts = [session supportedOutputChannelLayouts];
 
-        for (AVAudioChannelLayout *layout in layouts) {
+//        for (AVAudioChannelLayout *layout in layouts) {
             //AudioChannelLayoutTag layoutTag = layout.layoutTag;
 
             // Print information about each layout
-            DEBUG_TRACE(@"Supported layout: %u", layout);
-        }
+            DEBUG_TRACE(@"Supported layout: %u", -1 /*layout*/);
+//        }
     }
 }
 
@@ -379,7 +379,7 @@ void FillOutputBuffer(void *userData,
         // this callback can indicate available channel layouts when using AirPlay
         // Perhaps not very useful to us but interesting to catch anyway
         AVAudioSession *session = [AVAudioSession sharedInstance];
-        AVAudioSessionRenderingMode renderingMode = [session renderingMode];
+//        AVAudioSessionRenderingMode renderingMode = [session renderingMode];
 
         /*   AVAudioSessionRenderingModeNotApplicable           = 0,
              AVAudioSessionRenderingModeMonoStereo              = 1,
@@ -388,7 +388,7 @@ void FillOutputBuffer(void *userData,
              AVAudioSessionRenderingModeDolbyAudio              = 4,
              AVAudioSessionRenderingModeDolbyAtmos              = 5, */
 
-        DEBUG_TRACE(@"Rendering Mode: %@", renderingMode);
+        DEBUG_TRACE(@"Rendering Mode: %@", @"<renderingMode>");
     }
 }
 

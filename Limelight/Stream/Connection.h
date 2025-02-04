@@ -30,7 +30,7 @@ typedef struct {
 } video_stats_t;
 
 static volatile int volume = 127;
-void setVolume(int newVol);
+//void setVolume(int newVol);
 
 int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
 

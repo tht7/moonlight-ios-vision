@@ -59,13 +59,13 @@ struct RealityKitStreamView: View {
     init(streamConfig: Binding<StreamConfiguration>) {
         self._streamConfig = streamConfig
         self.controllerSupport = ControllerSupport(config: streamConfig.wrappedValue, delegate: DummyControllerDelegate())
-        let data = Data.init(count: 4 * Int(streamConfig.wrappedValue.width) * Int(streamConfig.wrappedValue.height)) // Dummy data
+        let data = Data.init(count: bytesPerRow * Int(streamConfig.wrappedValue.width) * Int(streamConfig.wrappedValue.height)) // Dummy data
         self.texture = try! TextureResource(
             dimensions: .dimensions(width: Int(streamConfig.wrappedValue.width), height: Int(streamConfig.wrappedValue.height)),
             format: .raw(pixelFormat: metalFormat),
             contents: .init(
                 mipmapLevels: [
-                    .mip(data: data, bytesPerRow: 4 * Int(streamConfig.wrappedValue.width) ), // TODO is this even needed
+                    .mip(data: data, bytesPerRow: bytesPerRow * Int(streamConfig.wrappedValue.width) ), // TODO is this even needed
                 ]
             )
         )
@@ -85,6 +85,7 @@ struct RealityKitStreamView: View {
                     screen.transform.translation.y = height
                     try! screen.model!.mesh.replace(with: mesh.contents)
                 }
+                .allowedDynamicRange(.high)
             }
         }
         .handlesGameControllerEvents(matching: .gamepad)

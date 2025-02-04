@@ -34,17 +34,17 @@
                                                  name:AVAudioSessionRouteChangeNotification
                                                object:nil];
 
-    if (@available(iOS 17.2, tvOS 17.2, *)) {
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(handleRenderingCapabilitiesChange:)
-                                                     name:AVAudioSessionRenderingCapabilitiesChangeNotification
-                                                   object:nil];
-
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(handleRenderingModeChange:)
-                                                     name:AVAudioSessionRenderingModeChangeNotification
-                                                   object:nil];
-    }
+//    if (@available(iOS 17.2, tvOS 17.2, *)) {
+//        [[NSNotificationCenter defaultCenter] addObserver:self
+//                                                 selector:@selector(handleRenderingCapabilitiesChange:)
+//                                                     name:AVAudioSessionRenderingCapabilitiesChangeNotification
+//                                                   object:nil];
+//
+//        [[NSNotificationCenter defaultCenter] addObserver:self
+//                                                 selector:@selector(handleRenderingModeChange:)
+//                                                     name:AVAudioSessionRenderingModeChangeNotification
+//                                                   object:nil];
+//    }
 #endif
 
     return self;
@@ -113,14 +113,14 @@
         // this callback can indicate available channel layouts when using AirPlay
         // Perhaps not very useful to us but interesting to catch anyway
         AVAudioSession *session = [AVAudioSession sharedInstance];
-        NSArray<AVAudioChannelLayout *> *layouts = [session supportedOutputChannelLayouts];
-
-        for (AVAudioChannelLayout *layout in layouts) {
-            //AudioChannelLayoutTag layoutTag = layout.layoutTag;
-
-            // Print information about each layout
-            DEBUG_TRACE(@"Supported layout: %u", layout);
-        }
+//        NSArray<AVAudioChannelLayout *> *layouts = [session supportedOutputChannelLayouts];
+//
+//        for (AVAudioChannelLayout *layout in layouts) {
+//            //AudioChannelLayoutTag layoutTag = layout.layoutTag;
+//
+//            // Print information about each layout
+//            DEBUG_TRACE(@"Supported layout: %u", layout);
+//        }
     }
 }
 
@@ -132,7 +132,7 @@
         // this callback can indicate available channel layouts when using AirPlay
         // Perhaps not very useful to us but interesting to catch anyway
         AVAudioSession *session = [AVAudioSession sharedInstance];
-        AVAudioSessionRenderingMode renderingMode = [session renderingMode];
+//        AVAudioSessionRenderingMode renderingMode = [session renderingMode];
 
         /*   AVAudioSessionRenderingModeNotApplicable           = 0,
              AVAudioSessionRenderingModeMonoStereo              = 1,
@@ -141,7 +141,7 @@
              AVAudioSessionRenderingModeDolbyAudio              = 4,
              AVAudioSessionRenderingModeDolbyAtmos              = 5, */
 
-        DEBUG_TRACE(@"Rendering Mode: %@", renderingMode);
+//        DEBUG_TRACE(@"Rendering Mode: %@", renderingMode);
     }
 }
 

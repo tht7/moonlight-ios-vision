@@ -24,7 +24,7 @@ struct StreamControls<Additions: View>: View {
             }
         }
         .onChange(of: viewModel.vol) { newVal, _ in
-            setVolume(Int32(newVal))
+//            setVolume(Int32(newVal))
         }
         .labelStyle(.iconOnly)
         .padding()
