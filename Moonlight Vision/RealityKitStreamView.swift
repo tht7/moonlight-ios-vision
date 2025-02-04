@@ -77,12 +77,18 @@ struct RealityKitStreamView: View {
                 RealityView { content in
                     let mesh = try! RealityKitStreamView.generateCurvedPlane(width: MAX_WIDTH_METERS, aspectRatio: aspectRatio, resulotion: (50,50), curveMagnitude: viewModel.streamSettings.realitykitRendererCurvature * curveAnimationMultiplier)
                     screen = ModelEntity(mesh: mesh, materials: [UnlitMaterial(texture: self.texture)])
+                    screen.collision = CollisionComponent(shapes: [
+                        .generateBox(width: 2, height: 2 * aspectRatio, depth: viewModel.streamSettings.realitykitRendererCurvature)
+                    ])
                     content.add(screen)
                 } update: { content in
                     let mesh = try! RealityKitStreamView.generateCurvedPlane(width: MAX_WIDTH_METERS, aspectRatio: aspectRatio, resulotion: (50,50), curveMagnitude: viewModel.streamSettings.realitykitRendererCurvature * curveAnimationMultiplier)
                     let size = content.convert(proxy.frame(in: .local), from: .local, to: .scene)
                     screen.transform.scale = .init(repeating: size.extents.x / 2)
                     screen.transform.translation.y = height
+                    screen.collision = CollisionComponent(shapes: [
+                        .generateBox(width: 2, height: 2 * aspectRatio, depth: viewModel.streamSettings.realitykitRendererCurvature)
+                    ])
                     try! screen.model!.mesh.replace(with: mesh.contents)
                 }
             }
@@ -192,8 +198,8 @@ struct RealityKitStreamView: View {
                 //print("unknown default")
             }
         }
-        .persistentSystemOverlays(viewModel.dimPassthrough ? .hidden : .automatic)
-        .preferredSurroundingsEffect(viewModel.dimPassthrough ? .systemDark : nil)
+        .persistentSystemOverlays(viewModel.streamSettings.dimPassthrough ? .hidden : .automatic)
+        .preferredSurroundingsEffect(viewModel.streamSettings.dimPassthrough ? .systemDark : nil)
 
     }
 

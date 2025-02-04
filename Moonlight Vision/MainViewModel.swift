@@ -27,7 +27,7 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
 
     @Published var volumeSliderValue: Float = 1.0
 
-    @Published var dimPassthrough = true
+    
     @Published var vol: Float = 127
     @Published var mute: Bool = false
 

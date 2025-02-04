@@ -32,7 +32,8 @@
                absoluteTouchMode:(BOOL)absoluteTouchMode
                     statsOverlay:(BOOL)statsOverlay
 realitykitRendererAnimateOpening:(BOOL)realitykitRendererAnimateOpening
-     realitykitRendererCurvature:(NSNumber*)realitykitRendererCurvature;
+     realitykitRendererCurvature:(NSNumber*)realitykitRendererCurvature
+                  dimPassthrough:(BOOL)dimPassthrough;
 
 - (NSArray*) getHosts;
 - (void) updateHost:(TemporaryHost*)host;

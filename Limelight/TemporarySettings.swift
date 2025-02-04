@@ -31,6 +31,7 @@ public class TemporarySettings: NSObject {
     @objc public var btMouseSupport = false
     @objc public var absoluteTouchMode = false
     @objc public var statsOverlay = false
+    @objc public var dimPassthrough = true
 
     @objc public var parent: MoonlightSettings?
 
@@ -45,6 +46,7 @@ public class TemporarySettings: NSObject {
         self.renderer = .classic
         self.realitykitRendererAnimateOpening = false
         self.realitykitRendererCurvature = 0.0
+        self.dimPassthrough = false
         super.init()
     }
 
@@ -77,7 +79,7 @@ public class TemporarySettings: NSObject {
 
         self.realitykitRendererAnimateOpening = settings.realitykitRendererAnimateOpening == 1
         self.realitykitRendererCurvature = settings.realitykitRendererCurvature?.floatValue ?? 0
-
+        self.dimPassthrough = settings.dimPassthrough?.boolValue ?? false
         #endif
 
         super.init()
@@ -86,7 +88,7 @@ public class TemporarySettings: NSObject {
     @objc public func save() {
         // save settings to parent
         let dataManager = DataManager()
-        dataManager.saveSettings(withBitrate: Int(bitrate), framerate: Int(framerate), height: Int(height), width: Int(width), audioConfig: Int(audioConfig), onscreenControls: Int(onscreenControls.rawValue), optimizeGames: optimizeGames, multiController: multiController, swapABXYButtons: swapABXYButtons, audioOnPC: playAudioOnPC, preferredCodec: UInt32(preferredCodec.rawValue), renderer: renderer.rawValue, useFramePacing: useFramePacing, enableHdr: enableHdr, btMouseSupport: btMouseSupport, absoluteTouchMode: absoluteTouchMode, statsOverlay: statsOverlay, realitykitRendererAnimateOpening: realitykitRendererAnimateOpening, realitykitRendererCurvature: NSNumber(value: realitykitRendererCurvature))
+        dataManager.saveSettings(withBitrate: Int(bitrate), framerate: Int(framerate), height: Int(height), width: Int(width), audioConfig: Int(audioConfig), onscreenControls: Int(onscreenControls.rawValue), optimizeGames: optimizeGames, multiController: multiController, swapABXYButtons: swapABXYButtons, audioOnPC: playAudioOnPC, preferredCodec: UInt32(preferredCodec.rawValue), renderer: renderer.rawValue, useFramePacing: useFramePacing, enableHdr: enableHdr, btMouseSupport: btMouseSupport, absoluteTouchMode: absoluteTouchMode, statsOverlay: statsOverlay, realitykitRendererAnimateOpening: realitykitRendererAnimateOpening, realitykitRendererCurvature: NSNumber(value: realitykitRendererCurvature), dimPassthrough: dimPassthrough)
     }
 }
 
