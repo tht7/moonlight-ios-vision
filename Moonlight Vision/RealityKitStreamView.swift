@@ -30,6 +30,7 @@ class DummyControllerDelegate: NSObject, ControllerSupportDelegate {
 struct RealityKitStreamView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var viewModel: MainViewModel
 
@@ -39,6 +40,8 @@ struct RealityKitStreamView: View {
     @State var curveAnimationMultiplier: Float = 1
     @State var controllerSupport: ControllerSupport?
     @State var height: Float = 0
+    
+    @State var shouldClose: Bool = false
 
     var aspectRatio: Float {
         get {
@@ -91,7 +94,20 @@ struct RealityKitStreamView: View {
                 }
                 .handlesGameControllerEvents(matching: .gamepad)
         }
-        
+        .ornament(visibility: connectionCallbacks.showAlert ? .visible :  .hidden , attachmentAnchor: .scene(.bottomFront), contentAlignment: .bottom) {
+            VStack(alignment: .center) {
+                Image(systemName: "exclamationmark.triangle")
+                Text("Stream error")
+                    .font(.title)
+                Text(connectionCallbacks.errorMessage ?? "Unknown error")
+                Button("Close") {
+                    shouldClose.toggle()
+                    dismissWindow()
+                }
+            }
+            .padding()
+            .glassBackgroundEffect()
+        }
         .ornament(attachmentAnchor: .scene(.bottomTrailingFront), contentAlignment: .bottomLeading) {
             StreamControls(horizontal: false, streamConfig: $streamConfig) {
                 HStack {
@@ -173,8 +189,11 @@ struct RealityKitStreamView: View {
             let operationQueue = OperationQueue()
             operationQueue.addOperation(_streamMan!)
         }
-        .onChange(of: connectionCallbacks.errorMessage) {
-            dismissWindow()
+        .onChange(of: shouldClose) { _, shouldClose in
+            if shouldClose {
+                openWindow(id: "mainView")
+                dismissWindow()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -182,16 +201,16 @@ struct RealityKitStreamView: View {
                 //print("active")
                 break
             case .inactive:
-                //print("inactive")
-                dismissWindow()
+                print("inactive")
+                break
             case .background:
-                //print("background -> a/b/c disappeared")
+                print("background")
                 dismissWindow()
                 viewModel.activelyStreaming = false
                 _streamMan?.stopStream()
                 _streamMan = nil
                 controllerSupport?.cleanup()
-                openWindow(id: "mainView")
+                if !shouldClose { openWindow(id: "mainView") }
             @unknown default: break
                 //print("unknown default")
             }

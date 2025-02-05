@@ -14,6 +14,7 @@ struct AppsView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.pushWindow) private var pushWindow
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     
     @Binding
     public var host: TemporaryHost
@@ -26,6 +27,12 @@ struct AppsView: View {
                         if (viewModel.streamSettings.renderer == .realitykit) {
                             openWindow(id: viewModel.streamSettings.renderer.windowId, value: config)
                             dismissWindow(id: "mainView")
+//                            Task {
+                                
+                                
+                                //                                await openImmersiveSpace(id: "immesiveSpace", value: config)
+                                
+//                            }
                         } else {
                             pushWindow(id: viewModel.streamSettings.renderer.windowId, value: config)
                         }
