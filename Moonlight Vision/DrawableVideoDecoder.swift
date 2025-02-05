@@ -38,7 +38,6 @@ let decodingFormat = kCVPixelFormatType_Lossless_32BGRA
 // #define BUFFER_TYPE_PICDATA ...
 // etc.
 
-
 // MARK: - VideoDecoderRenderer
 @objc
 class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
@@ -149,7 +148,9 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         let mtlTexture = CVMetalTextureGetTexture(imageTexture!)!
         
         blits.copy(from: mtlTexture, to: drawable.texture)
+        blits.generateMipmaps(for: drawable.texture)
         blits.endEncoding()
+
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         drawable.present()
@@ -167,8 +168,8 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                     pixelFormat: metalFormat,
                     width: Int(videoWidth),
                     height: Int(videoHeight),
-                    usage: [.renderTarget, .shaderRead, .shaderWrite],
-                    mipmapsMode: .none
+                    usage: [.renderTarget], // .renderTarget only, so that we get framebuffer compression
+                    mipmapsMode: .allocateAll // shinyquagsire23: Wasteful bc we probably only need like 2, but we don't have a choice here.
                 )
                 do {
                     let queue = try TextureResource.DrawableQueue(descriptor)
@@ -192,9 +193,9 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                 desc.height = Int(videoHeight)
                 desc.depth = 1
                 
-                desc.mipmapLevelCount = 1
+                desc.mipmapLevelCount = 1 // TODO(shinyquagsire23): Maybe 2?
                 desc.pixelFormat = metalFormat //.rgba16Float //.rgba16Float // .rg8Unorm //.r8Unorm// .bgra8Unorm
-                desc.textureUsage = [.shaderRead, .shaderWrite, .renderTarget]
+                desc.textureUsage = [.renderTarget] // .renderTarget only, so that we get framebuffer compression
                 desc.swizzle = .init(red: .red, green: .green, blue: .blue, alpha: .alpha)
                 
                 
@@ -327,6 +328,9 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                 self.formatDesc = formatDesc
                 // rgba16Float
                 let videoDecoderSpecification:[NSString: AnyObject] = [kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder:kCFBooleanTrue]
+                // TODO(shinyquagsire23): Setting kCVPixelBufferPixelFormatTypeKey *at all* will trigger
+                // a VideoToolbox bug that results in the output CVPixelBuffer's underlying Metal textures
+                // being decompressed, resulting in GPU bandwidth penalties
                 let attributes = [kCVPixelBufferPixelFormatTypeKey : decodingFormat /*kCVPixelFormatType_32BGRA , kCVPixelFormatType_420YpCbCr8BiPlanarFullRange*/, kCVPixelBufferMetalCompatibilityKey: true, kCVPixelBufferPoolMinimumBufferCountKey: 3] as CFDictionary
                 VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: formatDesc, decoderSpecification: videoDecoderSpecification as CFDictionary, imageBufferAttributes: attributes, outputCallback: &self.decoderCallback, decompressionSessionOut: &self.session)
             } else {
