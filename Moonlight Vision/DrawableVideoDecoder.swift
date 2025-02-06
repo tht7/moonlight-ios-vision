@@ -754,11 +754,10 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
     }
     
     private func annexBBufferToCMSampleBufferModifyInPlace(buffer: UnsafeMutableBufferPointer<UInt8>, videoFormat: CMFormatDescription, naluIndices: [NaluIndex]) -> CMBlockBuffer? {
-        var err: OSStatus = 0
         var offset = 0
 
         let umrbp = UnsafeMutableRawBufferPointer(start: buffer.baseAddress, count: buffer.count)
-        let bb = try! CMBlockBuffer.init(buffer: umrbp, deallocator: {(_, _) in /*buffer.deallocate()*/ }, flags: .assureMemoryNow)
+        let bb = try! CMBlockBuffer.init(buffer: umrbp, deallocator: {(_, _) in buffer.deallocate() }, flags: .assureMemoryNow)
 
         let pointer = UnsafeMutablePointer<UInt8>(OpaquePointer(buffer.baseAddress!))!
         for index in naluIndices {
