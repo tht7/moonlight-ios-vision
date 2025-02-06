@@ -578,59 +578,33 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         formatDesc: CMVideoFormatDescription,
         decodeUnit: PDECODE_UNIT!
     ) -> CMSampleBuffer? {
-
-        // Create block buffer from data
-        var dataBlockBuffer: CMBlockBuffer?
-        let statusDataBlock = CMBlockBufferCreateWithMemoryBlock(
-            allocator: nil,
-            memoryBlock: dataPtr,
-            blockLength: length,
-            blockAllocator: kCFAllocatorDefault,
-            customBlockSource: nil,
-            offsetToData: 0,
-            dataLength: length,
-            flags: 0,
-            blockBufferOut: &dataBlockBuffer
-        )
-        if statusDataBlock != kCMBlockBufferNoErr {
-            print("CMBlockBufferCreateWithMemoryBlock failed: \(statusDataBlock)")
-            return nil
-        }
-        // Now the CMBlockBuffer controls freeing `dataPtr`
-
         // Create an empty container block for rewriting AnnexB to length-delimited if needed
         var frameBlockBuffer: CMBlockBuffer?
-        let statusFrameBlock = CMBlockBufferCreateEmpty(
-            allocator: nil,
-            capacity: 0,
-            flags: 0,
-            blockBufferOut: &frameBlockBuffer
-        )
-        if statusFrameBlock != kCMBlockBufferNoErr {
-            print("CMBlockBufferCreateEmpty failed: \(statusFrameBlock)")
-            return nil
-        }
 
         // If H.264/HEVC, rewrite from AnnexB to length-delimited
         if (videoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) != 0 {
-            rewriteAnnexBToLengthDelimited(
-                frameBlockBuffer: frameBlockBuffer!,
-                dataBlockBuffer: dataBlockBuffer!,
-                totalLength: length
-            )
+            // dataPtr is either tied to the resulting BB, or is copied and freed immediately.
+            // dataPtr is also freed even if the result is nil.
+            let nals = UnsafeMutableBufferPointer<UInt8>(start: UnsafeMutablePointer(mutating: dataPtr), count: length)
+            frameBlockBuffer = annexBBufferToCMSampleBuffer(buffer: nals, videoFormat: formatDesc)
         } else {
             // AV1 or other codecs that don’t need rewriting
-            let statusRef = CMBlockBufferAppendBufferReference(
-                frameBlockBuffer!,
-                targetBBuf: dataBlockBuffer!,
+            let statusDataBlock = CMBlockBufferCreateWithMemoryBlock(
+                allocator: nil,
+                memoryBlock: dataPtr,
+                blockLength: length,
+                blockAllocator: kCFAllocatorDefault,
+                customBlockSource: nil,
                 offsetToData: 0,
                 dataLength: length,
-                flags: 0
+                flags: 0,
+                blockBufferOut: &frameBlockBuffer
             )
-            if statusRef != kCMBlockBufferNoErr {
-                print("CMBlockBufferAppendBufferReference failed: \(statusRef)")
+            if statusDataBlock != kCMBlockBufferNoErr {
+                print("CMBlockBufferCreateWithMemoryBlock failed: \(statusDataBlock)")
                 return nil
             }
+            // Now the CMBlockBuffer controls freeing `dataPtr`
         }
 
         // Build the sample buffer
@@ -665,104 +639,143 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
 
         return sampleBuffer
     }
-
-    /// Rewrites the given data from Annex-B format to length-delimited for H.264/HEVC
-    private func rewriteAnnexBToLengthDelimited(
-        frameBlockBuffer: CMBlockBuffer,
-        dataBlockBuffer: CMBlockBuffer,
-        totalLength: Int
-    ) {
-        // NALU start prefix size is 3 or 4 bytes. 
-        // The code finds start codes, then appends length prefixes instead.
-        let dataPtr = UnsafeMutablePointer<UInt8>.allocate(capacity: totalLength)
-        defer { dataPtr.deallocate() }
-
-        // We read out the original data
-        CMBlockBufferCopyDataBytes(dataBlockBuffer, atOffset: 0, dataLength: totalLength, destination: dataPtr)
-
-        var lastOffset = -1
-        for i in 0..<(totalLength - NALU_START_PREFIX_SIZE) {
-            // Search for 00 00 01
-            if dataPtr[i] == 0 && dataPtr[i+1] == 0 && dataPtr[i+2] == 1 {
-                // Found a new NALU start
-                if lastOffset != -1 {
-                    updateAnnexBBuffer(
-                        frameBlockBuffer: frameBlockBuffer,
-                        dataBlockBuffer: dataBlockBuffer,
-                        offset: lastOffset,
-                        length: i - lastOffset
-                    )
+    
+    // Based on https://webrtc.googlesource.com/src/+/refs/heads/main/common_video/h264/h264_common.cc
+    private func findNaluIndices(bufferBounded: UnsafeMutableBufferPointer<UInt8>) -> ([NaluIndex], Bool) {
+        var elgibleForModifyInPlace = true
+        guard bufferBounded.count >= /* kNaluShortStartSequenceSize */ 3 else {
+            return ([], false)
+        }
+        
+        var sequences = [NaluIndex]()
+        
+        let end = bufferBounded.count - /* kNaluShortStartSequenceSize */ 3
+        var i = 0
+        let buffer = Data(bytesNoCopy: bufferBounded.baseAddress!, count: bufferBounded.count, deallocator: .none) // ?? why is this faster
+        while i < end {
+            if buffer[i + 2] > 1 {
+                i += 3
+            } else if buffer[i + 2] == 1 {
+                if buffer[i + 1] == 0 && buffer[i] == 0 {
+                    var index = NaluIndex(startOffset: i, payloadStartOffset: i + 3, payloadSize: 0, threeByteHeader: true)
+                    if index.startOffset > 0 && buffer[index.startOffset - 1] == 0 {
+                        index.startOffset -= 1
+                        index.threeByteHeader = false
+                    }
+                    else {
+                        elgibleForModifyInPlace = false
+                    }
+                    
+                    if !sequences.isEmpty {
+                        sequences[sequences.count - 1].payloadSize = index.startOffset - sequences.last!.payloadStartOffset
+                    }
+                    
+                    sequences.append(index)
                 }
-                lastOffset = i
+                
+                i += 3
+            } else {
+                i += 1
             }
         }
-
-        if lastOffset != -1 {
-            // Append the last chunk
-            updateAnnexBBuffer(
-                frameBlockBuffer: frameBlockBuffer,
-                dataBlockBuffer: dataBlockBuffer,
-                offset: lastOffset,
-                length: totalLength - lastOffset
-            )
+        
+        if !sequences.isEmpty {
+            sequences[sequences.count - 1].payloadSize = bufferBounded.count - sequences.last!.payloadStartOffset
+        }
+        
+        return (sequences, elgibleForModifyInPlace)
+    }
+    
+    private struct NaluIndex {
+        var startOffset: Int
+        var payloadStartOffset: Int
+        var payloadSize: Int
+        var threeByteHeader: Bool
+    }
+    
+    // Based on https://webrtc.googlesource.com/src/+/refs/heads/main/sdk/objc/components/video_codec/nalu_rewriter.cc
+    private func annexBBufferToCMSampleBuffer(buffer: UnsafeMutableBufferPointer<UInt8>, videoFormat: CMFormatDescription) -> CMBlockBuffer? {
+        let (naluIndices, elgibleForModifyInPlace) = findNaluIndices(bufferBounded: buffer)
+        
+        if elgibleForModifyInPlace {
+            return annexBBufferToCMSampleBufferModifyInPlace(buffer: buffer, videoFormat: videoFormat, naluIndices: naluIndices)
+        }
+        else {
+            return annexBBufferToCMSampleBufferWithCopy(buffer: buffer, videoFormat: videoFormat, naluIndices: naluIndices)
         }
     }
+    
+    private func annexBBufferToCMSampleBufferWithCopy(buffer: UnsafeMutableBufferPointer<UInt8>, videoFormat: CMFormatDescription, naluIndices: [NaluIndex]) -> CMBlockBuffer? {
+        var err: OSStatus = 0
+        defer { buffer.deallocate() }
 
-    /// This function does the final rewriting step for each found NALU
-    private func updateAnnexBBuffer(
-        frameBlockBuffer: CMBlockBuffer,
-        dataBlockBuffer: CMBlockBuffer,
-        offset: Int,
-        length: Int
-    ) {
-        // Insert the 4-byte length prefix instead of start code
-        let oldOffset = CMBlockBufferGetDataLength(frameBlockBuffer)
-        let statusAppend = CMBlockBufferAppendMemoryBlock(
-            frameBlockBuffer,
-            memoryBlock: nil,
-            length: NAL_LENGTH_PREFIX_SIZE,
-            blockAllocator: kCFAllocatorDefault,
-            customBlockSource: nil,
-            offsetToData: 0,
-            dataLength: NAL_LENGTH_PREFIX_SIZE,
-            flags: 0
-        )
-        if statusAppend != noErr {
-            print("CMBlockBufferAppendMemoryBlock failed: \(statusAppend)")
-            return
+        // we're replacing the 3/4 nalu headers with a 4 byte length, so add an extra byte on top of the original length for each 3-byte nalu header
+        let blockBufferLength = buffer.count + naluIndices.filter(\.threeByteHeader).count
+        let blockBuffer = try! CMBlockBuffer(length: blockBufferLength, flags: .assureMemoryNow)
+        
+        var contiguousBuffer: CMBlockBuffer!
+        if !CMBlockBufferIsRangeContiguous(blockBuffer, atOffset: 0, length: 0) {
+            err = CMBlockBufferCreateContiguous(allocator: nil, sourceBuffer: blockBuffer, blockAllocator: nil, customBlockSource: nil, offsetToData: 0, dataLength: 0, flags: 0, blockBufferOut: &contiguousBuffer)
+            if err != 0 {
+                print("CMBlockBufferCreateContiguous error")
+                return nil
+            }
+        } else {
+            contiguousBuffer = blockBuffer
         }
-
-        // The new length (strip out the start code bytes)
-        let dataLength = length - NALU_START_PREFIX_SIZE
-        let lengthBytes: [UInt8] = [
-            UInt8((dataLength >> 24) & 0xFF),
-            UInt8((dataLength >> 16) & 0xFF),
-            UInt8((dataLength >> 8) & 0xFF),
-            UInt8(dataLength & 0xFF)
-        ]
-
-        let statusReplace = CMBlockBufferReplaceDataBytes(
-            with: lengthBytes,
-            blockBuffer: frameBlockBuffer,
-            offsetIntoDestination: oldOffset,
-            dataLength: NAL_LENGTH_PREFIX_SIZE
-        )
-        if statusReplace != noErr {
-            print("CMBlockBufferReplaceDataBytes failed: \(statusReplace)")
-            return
+        
+        var blockBufferSize = 0
+        var dataPtr: UnsafeMutablePointer<Int8>!
+        err = CMBlockBufferGetDataPointer(contiguousBuffer, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &blockBufferSize, dataPointerOut: &dataPtr)
+        if err != 0 {
+            print("CMBlockBufferGetDataPointer error")
+            return nil
         }
+        
+        let pointer = UnsafeMutablePointer<UInt8>(OpaquePointer(dataPtr))!
+        var offset = 0
+        
+        buffer.withUnsafeBytes { (unsafeBytes) in
+            let bytes = unsafeBytes.bindMemory(to: UInt8.self).baseAddress!
 
-        // Attach the data buffer by reference
-        let statusRef = CMBlockBufferAppendBufferReference(
-            frameBlockBuffer,
-            targetBBuf: dataBlockBuffer,
-            offsetToData: offset + NALU_START_PREFIX_SIZE,
-            dataLength: dataLength,
-            flags: 0
-        )
-        if statusRef != noErr {
-            print("CMBlockBufferAppendBufferReference failed: \(statusRef)")
+            for index in naluIndices {
+                pointer.advanced(by: offset    ).pointee = UInt8((index.payloadSize >> 24) & 0xFF)
+                pointer.advanced(by: offset + 1).pointee = UInt8((index.payloadSize >> 16) & 0xFF)
+                pointer.advanced(by: offset + 2).pointee = UInt8((index.payloadSize >>  8) & 0xFF)
+                pointer.advanced(by: offset + 3).pointee = UInt8((index.payloadSize      ) & 0xFF)
+                offset += 4
+                
+                pointer.advanced(by: offset).update(from: bytes.advanced(by: index.payloadStartOffset), count: blockBufferSize - offset)
+                offset += index.payloadSize
+            }
         }
+        
+        return contiguousBuffer
+    }
+    
+    private func annexBBufferToCMSampleBufferModifyInPlace(buffer: UnsafeMutableBufferPointer<UInt8>, videoFormat: CMFormatDescription, naluIndices: [NaluIndex]) -> CMBlockBuffer? {
+        var err: OSStatus = 0
+        var offset = 0
+
+        let umrbp = UnsafeMutableRawBufferPointer(start: buffer.baseAddress, count: buffer.count)
+        let bb = try! CMBlockBuffer.init(buffer: umrbp, deallocator: {(_, _) in /*buffer.deallocate()*/ }, flags: .assureMemoryNow)
+
+        let pointer = UnsafeMutablePointer<UInt8>(OpaquePointer(buffer.baseAddress!))!
+        for index in naluIndices {
+            pointer.advanced(by: offset+0).pointee = UInt8((index.payloadSize >> 24) & 0xFF)
+            pointer.advanced(by: offset+1).pointee = UInt8((index.payloadSize >> 16) & 0xFF)
+            pointer.advanced(by: offset+2).pointee = UInt8((index.payloadSize >>  8) & 0xFF)
+            pointer.advanced(by: offset+3).pointee = UInt8((index.payloadSize      ) & 0xFF)
+            offset += 4
+            
+            offset += index.payloadSize
+        }
+        
+        if bb == nil {
+            buffer.deallocate()
+        }
+        
+        return bb
     }
 
     // MARK: - Rendering to the Drawable
