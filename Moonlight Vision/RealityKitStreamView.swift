@@ -65,7 +65,7 @@ struct RealityKitStreamView: View {
         let data = Data.init(count: 4 * Int(streamConfig.wrappedValue.width) * Int(streamConfig.wrappedValue.height)) // Dummy data
         self.texture = try! TextureResource(
             dimensions: .dimensions(width: Int(streamConfig.wrappedValue.width), height: Int(streamConfig.wrappedValue.height)),
-            format: .raw(pixelFormat: metalFormat),
+            format: .raw(pixelFormat: .bgra8Unorm_srgb), // Doesn't matter, dummy data
             contents: .init(
                 mipmapLevels: [
                     .mip(data: data, bytesPerRow: 4 * Int(streamConfig.wrappedValue.width) ), // TODO is this even needed
