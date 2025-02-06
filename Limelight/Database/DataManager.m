@@ -70,7 +70,8 @@
                absoluteTouchMode:(BOOL)absoluteTouchMode
                     statsOverlay:(BOOL)statsOverlay
 realitykitRendererAnimateOpening:(BOOL)realitykitRendererAnimateOpening
-     realitykitRendererCurvature:(NSNumber*)realitykitRendererCurvature {
+     realitykitRendererCurvature:(NSNumber*)realitykitRendererCurvature
+                  dimPassthrough:(BOOL)dimPassthrough {
     [_managedObjectContext performBlockAndWait:^{
         MoonlightSettings* settingsToSave = [self retrieveSettings];
         settingsToSave.framerate = [NSNumber numberWithInteger:framerate];
@@ -92,6 +93,7 @@ realitykitRendererAnimateOpening:(BOOL)realitykitRendererAnimateOpening
         settingsToSave.renderer = [NSNumber numberWithInteger: renderer];
         settingsToSave.realitykitRendererAnimateOpening = [NSNumber numberWithBool: realitykitRendererAnimateOpening];
         settingsToSave.realitykitRendererCurvature = realitykitRendererCurvature;
+        settingsToSave.dimPassthrough = [NSNumber numberWithBool: dimPassthrough];
         [self saveData];
     }];
 }

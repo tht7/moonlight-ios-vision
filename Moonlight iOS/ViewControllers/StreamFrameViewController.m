@@ -328,7 +328,7 @@
     
     [_statsUpdateTimer invalidate];
     _statsUpdateTimer = nil;
-    
+    [_streamMan stopStream];
     [self.navigationController popToRootViewControllerAnimated:YES];
 }
 
