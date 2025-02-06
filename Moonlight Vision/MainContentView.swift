@@ -54,6 +54,10 @@ struct MainContentView: View {
                     }
                     .navigationTitle("Computers") // Keep simple navigation title
                     // REMOVE the VStack navigationTitle we added before
+                    Text("Please actually read the Change Log")
+                        .font(.system(size: 10)) // Even smaller font size for the second line
+                        .foregroundColor(.gray)
+                        .padding(.bottom) // Add bottom padding for visual spacing
 
                     Button { // Make the Text a Button
                         isRefreshingDiscovery.toggle()
